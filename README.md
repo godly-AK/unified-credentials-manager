@@ -1,115 +1,91 @@
-# Manipal Hackathon 2025: [NetKnights]
+<div align="center">
 
-**Team Name:** NetKnights
+# Unified Credentials Manager
 
-**Problem Statement:** `Cybersecurity, Password Breach Detection and Behavioural Analysis`
+**A credential security platform combining breach-aware authentication, biometric re-verification, and ML-driven anomaly detection.**
 
----
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688)](#)
+[![Flutter](https://img.shields.io/badge/Mobile-Flutter-02569B)](#)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791)](#)
+[![ELK](https://img.shields.io/badge/SIEM-Elasticsearch%20%2B%20Kibana-005571)](#)
+[![ML](https://img.shields.io/badge/Detection-Trained%20ML%20Model-F7931E)](#)
+[![Docker](https://img.shields.io/badge/Deploy-Docker%20Compose-2496ED)](#)
 
-## Introduction
-
-In the digital era, organizations face growing cybersecurity challenges as cyberattacks become increasingly sophisticated. One of the most common and damaging threats is password breaches, which can compromise sensitive information and disrupt critical operations. Traditional security measures often fail to detect subtle anomalies in user behaviour that precede or follow such breaches. To address this, advanced behavioural analysis and password breach detection systems are essential. By combining real-time monitoring, anomaly detection, and intelligent threat analysis, organizations can proactively identify suspicious activities, prevent unauthorized access, and strengthen their overall security posture.
-
----
-
-## Access & Live Demo
-
-The website is currently not deployed.
+</div>
 
 ---
 
-## Local Deployment Instructions
+## The problem
 
- However, for a complete technical review, code verification, and to ensure reproducibility, the following instructions are provided to set up and run the project locally. This allows for a thorough assessment of the project's architecture and build process.
+Password checks alone don't catch breaches — they catch typos. A credential can be technically "correct" and still be compromised, reused, or being entered by someone who isn't the account owner. This project treats authentication as a pipeline, not a single check: every credential is screened against real breach data before it's accepted, every password change requires device-backed biometric proof of identity, and login behavior is continuously scored for anomalies rather than trusted by default.
 
-### Method 1: Using Docker 
+## What it does
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [git@github.com:Manipal-Hackathon-2025/NetKnights.git](git@github.com:Manipal-Hackathon-2025/NetKnights.git)
-    cd NetKnights
-    ```
+- **Breach-aware password changes** — every new password is checked against Have I Been Pwned before it's accepted; passwords found in known breaches are rejected outright.
+- **Password reuse prevention via Bloom filter** — a space-efficient Bloom filter tracks previously used password fingerprints, blocking reuse without storing plaintext history.
+- **Password strength & hygiene scoring** — a weighted strength analyzer scores new passwords on entropy and common-pattern detection before they're accepted, in addition to client-side `zxcvbn` feedback during registration.
+- **Native biometric re-authentication** — a companion Flutter app uses device-backed biometric signing (fingerprint/face, via hardware-key-backed signatures) to verify identity before sensitive actions like password changes are authorized.
+- **ML-based anomaly detection** — a trained classifier scores login patterns (behavioral/contextual features) to flag anomalous activity and mark accounts for review.
+- **Security event pipeline with SIEM dashboarding** — auth events flow into Elasticsearch and are visualized live in Kibana, with rate-limited endpoints (`slowapi`) to blunt brute-force and credential-stuffing attempts.
+- **Automated breach-alert emails** — flagged anomalous activity triggers an email notification to the account owner.
 
-2.  **Build the Docker image:**
-    ```bash
-    docker compose up -d .
-    ```
+## Architecture
 
-3.  **Access the application:**
-    Backend API: http://localhost:8000
+```
+ Flutter app (biometric key generation & signing)
+        │
+        ▼
+ Next.js frontend  ──────────────►  FastAPI backend  ──────────────►  PostgreSQL
+   (register / login /                 │  auth, rate limiting,          (hashed credentials,
+    password-change UI)                │  HIBP + Bloom-filter checks,    password history)
+                                        │  biometric signature verify
+                                        │
+                                        ├──────────► Elasticsearch ──► Kibana (SIEM dashboard)
+                                        │
+                                        └──────────► Trained ML model (anomaly scoring) ──► Email alert
+```
 
-    Frontend: http://localhost:3000
+## Tech stack
 
-    Kibana: http://localhost:5601
+| Layer | Choice |
+|---|---|
+| Backend / API | FastAPI, SQLAlchemy, `slowapi` rate limiting |
+| Mobile / biometric | Flutter, `biometric_signature` (hardware-key-backed device signing) |
+| Frontend | Next.js, TypeScript, `zxcvbn` client-side strength scoring |
+| Database | PostgreSQL |
+| Security intelligence | Have I Been Pwned integration, Bloom-filter reuse tracking, trained ML anomaly classifier |
+| Monitoring | Elasticsearch + Kibana |
+| Deployment | Docker Compose |
 
-    Elasticsearch API: http://localhost:9200
+## Running it
 
-    Access the Frontend to view the demo page, access kibana to view the analytics dashboard and logs.
+```bash
+git clone https://github.com/godly-AK/unified-credentials-manager.git
+cd unified-credentials-manager
+```
 
-    
-### Method 2: Without Using Docker
+Copy `.env.example` to `.env` and fill in your own values (SMTP credentials, JWT secret, DB connection) — the app will not start with placeholder secrets.
 
-1. **Clone this repository**
-   ```bash
-   git clone [git@github.com:Manipal-Hackathon-2025/NetKnights.git](git@github.com:Manipal-Hackathon-2025/NetKnights.git)
-    cd NetKnights
-   ```
-2. **Run this command to run the frontend**
-   ```bash
-   npm install zxcvbn
-   npm run dev
-   ```
-3. **Run this command to run the backend**
-   ```bash
-   pip install -r requirements.txt
-   uvicorn backend:app --reload --port 8000
-   ```
+```bash
+docker compose up -d
+```
 
-## 🌐 Web Application
+Backend: `http://localhost:8000` · Kibana: `http://localhost:5601`
 
-### **Feature 1: [Transaction History Between Admin Users](#feature-1-transaction-history-between-admin-users)**
-This feature allows web administrators to view detailed transaction logs between two admin accounts. It provides insights into activities such as fund transfers, data exchanges, or access requests — helping ensure accountability and transparency within the admin network.
+For the mobile app:
+```bash
+cd auth_app
+flutter pub get
+flutter run
+```
 
----
+## Roadmap
 
-### **Feature 2: [Password Breach Threat Detection](#feature-2-password-breach-threat-detection)**
-This functionality continuously monitors user credentials to identify potential threats resulting from password breaches. If a password is found to be compromised or reused in unsafe contexts, the system alerts administrators and recommends immediate security actions.
-
----
-
-### **Feature 3: [Integration with SIEM Tools](#feature-3-integration-with-siem-tools)**
-The platform integrates with Security Information and Event Management (SIEM) tools to aggregate, analyze, and visualize security-related data in real time. This enables advanced threat detection, incident response, and centralized monitoring across the entire system.
-
----
-
-### **Feature 4: [Biometric Authentication](#feature-5-biometric-authentication)**
-The application now supports biometric authentication mechanisms for enhanced user verification.
-
----
-
-### **Feature 5: [Anomaly Detection using Elasticsearch and Kibana](#feature-6-anomaly-detection-using-elasticsearch-and-kibana)**
-Real-time behavior anomaly detection with visualization on Kibana dashboards.
-
----
-
-### **Feature 6: [Random Forest Anomaly Detection with User Alerts](#feature-7-random-forest-anomaly-detection-with-user-alerts)**
-ML-based anomaly detection using the Random Forest algorithm to identify suspicious activity and notify users.
+- Wire the ML anomaly detector directly into the live login path (currently run as a standalone scoring pass over stored events) for real-time blocking rather than after-the-fact flagging
+- Isolate the credential store into its own service/database boundary
+- Migrate password hashing from bcrypt to Argon2id
+- Admin portal for reviewing flagged accounts and audit trails directly, instead of via Kibana alone
 
 ---
 
-### **Feature 7: [Salting and Peppering for Password Encryption](#feature-8-salting-and-peppering-for-password-encryption)**
-Enhanced password security by applying **salting** and **peppering** techniques during login.
-
-
-
----
-
-## Tech Stack
-
-List the primary technologies, frameworks, and tools used to build your project.
-
-* **Frontend:** `React, Next.js`
-* **Backend:** `FastAPI`
-* **Database:** `PostgreSQL`
-* **Machine Learning:** `None`
-* **Deployment:** `Docker`
+<sub>**Base version originally built as a team hackathon MVP** — *NetKnights*, Manipal Hackathon 2025, problem statement: Cybersecurity / Password Breach Detection & Behavioural Analysis. The original team submission is preserved here: [Manipal-Hackathon-2025/NetKnights](https://github.com/Manipal-Hackathon-2025/NetKnights-Bugbounty). This repository is an independent, actively evolving continuation built on top of that base.</sub>
