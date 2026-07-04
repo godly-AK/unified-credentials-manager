@@ -31,7 +31,7 @@ SMTP_PASS = "REDACTED"
 # -------------------------------
 # LOAD MODEL + FEATURES
 # -------------------------------
-with open("trained_model.pkl", "rb") as f:
+with open("ml_artifacts/trained_model.pkl", "rb") as f:
     model = pickle.load(f)
 
 model_features_in = getattr(model, "feature_names_in_", None)
@@ -39,10 +39,10 @@ if model_features_in is not None:
     feature_columns = list(model_features_in)
 else:
     try:
-        with open("feature_columns.pkl", "rb") as f:
+        with open("ml_artifacts/feature_columns.pkl", "rb") as f:
             feature_columns = list(pickle.load(f))
     except Exception:
-        raise RuntimeError("Model does not expose feature_names_in_ and feature_columns.pkl not found.")
+        raise RuntimeError("Model does not expose feature_names_in_ and ml_artifacts/feature_columns.pkl not found.")
 
 print("[Init] Model expects features:", feature_columns)
 

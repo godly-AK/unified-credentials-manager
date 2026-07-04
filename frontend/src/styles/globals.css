@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Bitcount Ink";
+  src: url("/fonts/Bitcount-Ink.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+.bitcount-variant {
+  font-variation-settings:
+    "slnt" 0,
+    "CRSV" 0.5,
+    "ELSH" 0,
+    "ELXP" 0,
+    "SZP1" 0,
+    "SZP2" 0,
+    "XPN1" 0,
+    "XPN2" 0,
+    "YPN1" 0,
+    "YPN2" 0;
+}
+body {
+  font-family: 'Bitcount Single Ink', monospace, sans-serif;
+}
+.bitcount-variant {
+  font-family: 'Bitcount Single Ink', monospace, sans-serif;
+}

@@ -18,8 +18,8 @@ PEPPER_ENV = os.getenv("PEPPER", "dev-pepper-replace-in-prod")
 PEPPER = PEPPER_ENV.encode("utf-8") if isinstance(PEPPER_ENV, str) else PEPPER_ENV
 
 FERNET_MASTER_KEY_ENV = os.getenv("FERNET_MASTER_KEY", None)
-MASTER_KEY_PATH = Path("master.key")
-BLOOM_PATH = Path("password_bloom_filter.bloom")
+MASTER_KEY_PATH = Path("ml_artifacts/master.key")
+BLOOM_PATH = Path("ml_artifacts/password_bloom_filter.bloom")
 
 # -------- Master Fernet Key (persistent in dev, env in prod) --------
 def get_master_fernet_key() -> bytes:
