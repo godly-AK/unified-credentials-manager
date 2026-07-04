@@ -56,7 +56,7 @@ def block_user(username):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("UPDATE test SET blocked = TRUE WHERE usernames = %s", (username,))
+        cur.execute("UPDATE users SET blocked = TRUE WHERE username = %s", (username,))
         conn.commit()
         cur.close()
         conn.close()
@@ -69,7 +69,7 @@ def get_user_email(username):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT emails FROM test WHERE usernames = %s", (username,))
+        cur.execute("SELECT emails FROM users WHERE username = %s", (username,))
         res = cur.fetchone()
         cur.close()
         conn.close()
