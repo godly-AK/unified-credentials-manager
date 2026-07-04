@@ -87,15 +87,8 @@ def send_email(to_email, subject, body):
         print(f"[Email] No recipient for {subject}")
         return
     try:
-        msg = EmailMessage()
-        msg["From"] = EMAIL_FROM
-        msg["To"] = to_email
-        msg["Subject"] = subject
-        msg.set_content(body)
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as s:
-            s.starttls()
-            s.login(SMTP_USER, SMTP_PASS)
-            s.send_message(msg)
+        # instead of actually sending via smtplib:
+        print(f"[ALERT EMAIL] To: {to_email} | Subject: {subject} | Body: {body}")
         print(f"[Email] Sent to {to_email}")
     except Exception as e:
         print(f"[Email] Failed to send to {to_email}: {e}")

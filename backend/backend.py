@@ -10,6 +10,9 @@ from elasticsearch import Elasticsearch
 
 import psycopg2
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 import base64
 import bcrypt
 from cryptography.hazmat.primitives import serialization, hashes
@@ -27,14 +30,16 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ------------------------------
 DATABASE_CONFIG = {
-    "dbname": "test",
-    "user": "postgres",
-    "password": "strongpassword",
-    "host": "localhost",
-    "port": "5432",
+    "dbname": os.getenv("DB_NAME", "test"),
+    "user": os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD"),
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": os.getenv("DB_PORT", "5432"),
 }
 
-JWT_SECRET = os.getenv("JWT_SECRET", "supersecretkey")
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable is not set")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_DAYS = 30
 
