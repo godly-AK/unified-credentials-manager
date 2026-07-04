@@ -22,16 +22,5 @@ async def login(payload: LoginRequest, request: Request, db: Session = Depends(g
 
 @router.post("/password-change", response_model=WebResponse)
 async def change_password(payload: PasswordChangeRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == payload.username).first()
-    if not user:
-        return WebResponse(success=False, message="User not found")
-        
-    try:
-        from utils import PasswordCrypto
-        hashed = PasswordCrypto.hash_password(payload.new_password).decode("utf-8")
-        user.password_hash = hashed
-        user.passwd_changed = datetime.utcnow()
-        db.commit()
-        return WebResponse(success=True, message="Password changed successfully")
-    except Exception as e:
-        return WebResponse(success=False, message=str(e))
+    success, data = AuthService.change_password(db, payload.username, payload.new_password)
+    return WebResponse(success=success, data=data if success else None, message=data.get("message", data.get("error")))

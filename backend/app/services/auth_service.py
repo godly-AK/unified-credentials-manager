@@ -8,7 +8,6 @@ try:
 except ImportError:
     pass
 
-MAX_PASSWORD_AGE_DAYS = 90
 
 class AuthService:
     @staticmethod
@@ -61,10 +60,7 @@ class AuthService:
         if not PasswordCrypto.verify_password(password, hashed_pw):
             return False, {"error": "Invalid username or password."}
             
-        if user.passwd_changed:
-            if datetime.utcnow() - user.passwd_changed.replace(tzinfo=None) > timedelta(days=MAX_PASSWORD_AGE_DAYS):
-                return False, {"error": "Password expired. Please change your password."}
-                
+
         raw_session = secrets.token_bytes(32)
         encrypted_token = encrypt_token_with_master(raw_session)
         
@@ -78,3 +74,33 @@ class AuthService:
             "session_token_encrypted": encrypted_token.hex(),
             "username": username
         }
+
+    @staticmethod
+    def change_password(db: Session, username: str, new_password: str):
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            return False, {"error": "User not found"}
+            
+        try:
+            pwned_count = check_pwned_password(new_password)
+        except Exception:
+            pwned_count = 0
+            
+        if pwned_count > 0:
+            return False, {"error": f"This password appeared in {pwned_count} breaches."}
+            
+        strength = CredentialHygieneScanner.analyze_strength(new_password)
+        if not CredentialHygieneScanner.is_strong(new_password):
+            return False, {"error": "Weak password.", "analysis": strength}
+            
+        if PasswordReuseFilter.check(new_password):
+            return False, {"error": "Password has been used previously."}
+            
+        hashed = PasswordCrypto.hash_password(new_password).decode("utf-8")
+        PasswordReuseFilter.add(new_password)
+        
+        user.password_hash = hashed
+        user.passwd_changed = datetime.utcnow()
+        db.commit()
+        
+        return True, {"message": "Password changed successfully"}

@@ -24,12 +24,14 @@ import time
 # -----------------------------
 # CONFIG - change to match your env
 # -----------------------------
+from app.core.config import settings
+
 DB_CONFIG = {
-    "dbname": "test",
-    "user": "postgres",
-    "password": "strongpassword",
-    "host": "localhost",
-    "port": 5432,
+    "dbname": settings.db_name,
+    "user": settings.db_user,
+    "password": settings.db_password,
+    "host": settings.db_host,
+    "port": settings.db_port,
 }
 
 ELASTICSEARCH_URL = "http://localhost:9200"
