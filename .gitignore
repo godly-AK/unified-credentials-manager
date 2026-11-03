@@ -9,6 +9,7 @@ node_modules/
 coverage/
 .demo/
 .playwright-cli/
+.taste-skill/
 backend/data/*.sqlite3
 /output/playwright/
 /frontend/public/downloads/*.apk

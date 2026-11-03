@@ -27,7 +27,7 @@ export default function Register() {
     finally { setBusy(false); }
   }
   return (
-    <AuthShell title="A stronger start." description="Create your account with a memorable passphrase. Add your phone as a recovery device whenever you are ready.">
+    <AuthShell title="Create your UCM account" description="Choose a username and a long password. You can then enroll your phone for approval and recovery.">
       <h2>Create an account</h2><p>A few details. A password only you know.</p>
       {created ? <div className="form-stack"><p className="notice success" role="status">Your account is ready. Sign in with your new password.</p><Link className="btn full" href="/login">Go to sign in</Link></div> :
         <form className="form-stack" onSubmit={submit}>
@@ -38,7 +38,7 @@ export default function Register() {
           </label>
           <label className="field" htmlFor="email">Email address
             <input id="email" type="email" value={email} onChange={event => setEmail(event.target.value)}
-              required maxLength={254} autoComplete="email" placeholder="you@example.com" />
+              required maxLength={254} autoComplete="email" placeholder="Your email address" />
           </label>
           <PasswordField id="password" label="Password" newPassword value={password} onChange={setPassword}
             hint="Use 15–128 characters. Spaces and password managers are welcome." />

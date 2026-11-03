@@ -171,7 +171,7 @@ export default function PipelinePage() {
     </section>}
     <div className="pipeline-grid">
       <section className="panel"><h2>Approval steps</h2><div className="pipeline-steps">
-        {checks.map(check => <div className="pipeline-step" key={check.title}><span className={'step-dot' + (check.complete ? ' done' : '')}>{check.complete ? '✓' : '·'}</span>
+        {checks.map(check => <div className="pipeline-step" key={check.title}><span className={'step-dot' + (check.complete ? ' done' : '')} aria-hidden="true" />
           <div><h3>{check.title}</h3><p className="muted">{check.description}</p></div><span className={'badge' + (check.complete ? '' : ' pending')}>{check.complete ? 'Complete' : 'Waiting'}</span></div>)}
       </div>
       {status?.challenge && <div className="challenge-box"><p className="eyebrow">ACTIVE REQUEST</p><p>Enter this request code in the main-phone app:</p>

@@ -464,7 +464,9 @@ def test_tiered_access_requires_phone_and_two_distinct_nodes(client, monkeypatch
         result = client.post("/api/trust/node-approve", json={"challenge_id": challenge_id,
             "node_id": nodes[slot], "signature_b64": sign(key, "node-" + slot, challenge)})
         assert result.status_code == 200, result.text
-    assert client.get("/api/data/office").status_code == 200
+    office_response = client.get("/api/data/office")
+    assert office_response.status_code == 200
+    assert len(office_response.json()["documents"]) == 3
     revoked = client.request("DELETE", "/api/trust/nodes/" + nodes["B"], json={"current_password": PASSWORD})
     assert revoked.status_code == 200
     assert client.get("/api/data/office").status_code == 403

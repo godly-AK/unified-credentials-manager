@@ -139,7 +139,7 @@ export default function MonitoringPage() {
     </div>
     {status === 'loading' && <p className="loading" role="status">Checking monitoring access…</p>}
     {status === 'forbidden' && <section className="panel"><h2>Administrator access required</h2><p className="muted">A database operator must grant this role to an enrolled account.</p></section>}
-    {status === 'needs-phone' && <section className="panel"><h2>Approve on your main phone</h2><p className="muted">Cross-account monitoring needs a fresh phone approval for this session.</p><div className="panel-actions"><Link href="/services/pipeline" className="btn">Open login pipeline</Link><button className="btn secondary" onClick={() => void load()}>Try again</button></div></section>}
+    {status === 'needs-phone' && <section className="panel"><h2>Approve on your main phone</h2><p className="muted">Cross-account monitoring needs a fresh phone approval for this session.</p><div className="panel-actions"><Link href="/login" className="btn">Start phone approval</Link><button className="btn secondary" onClick={() => void load()}>Try again</button></div></section>}
     {status === 'error' && <section className="panel"><h2>Monitoring is unavailable</h2><p className="muted">{error}</p><div className="panel-actions"><button className="btn secondary" onClick={() => void load()}>Try again</button></div></section>}
     {status === 'ready' && <>
       <div className="monitor-stats" aria-label="Security activity in the last 24 hours">

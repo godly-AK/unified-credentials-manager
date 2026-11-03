@@ -26,7 +26,7 @@ export default function AccountPage() {
   async function signOut(id?: string) {
     setBusy(id ?? 'logout'); setError('');
     try {
-      if (!id) { await api.post('/api/logout', {}); router.replace('/login'); }
+      if (!id) { await api.post('/api/logout', {}); window.dispatchEvent(new Event('ucm-auth-change')); router.replace('/login'); }
       else { await api.delete('/api/sessions/' + id); setMessage('That session has been signed out.'); await load(); }
     } catch (failure) { setError(getApiError(failure, 'Could not sign out. Try again.')); }
     finally { setBusy(''); }
@@ -57,14 +57,14 @@ export default function AccountPage() {
             <div><dt>Email address</dt><dd>{profile?.email ?? 'Loading…'}</dd></div>
             <div><dt>Password</dt><dd>Protected with a one-way hash</dd></div>
           </dl>
-          <div className="panel-actions"><Link className="btn secondary" href="/services/security">Manage account security</Link><Link className="btn secondary" href="/services/pipeline">View login pipeline</Link>{profile?.is_monitoring_admin && <Link className="btn secondary" href="/services/monitoring">Security monitoring</Link>}</div>
+          <div className="panel-actions"><Link className="btn secondary" href="/services/security">Manage account security</Link><Link className="btn secondary" href="/services/pipeline">Workplace devices</Link>{profile?.is_monitoring_admin && <Link className="btn secondary" href="/services/monitoring">Security monitoring</Link>}</div>
         </section>
         <section className="panel">
           <div className="panel-heading"><h2>Recovery device</h2><span className={'badge' + (profile?.device_enrolled ? '' : ' pending')}>{profile?.device_enrolled ? 'Enrolled' : 'Not enrolled'}</span></div>
           <p className="muted">Use the UCM Android app to enroll your phone. Its device key can approve a password reset with your fingerprint or face.</p>
           {profile?.device_enrolled ? <div className="form-stack" style={{ marginTop: 20 }}>
             <p className="hint">Registered key: {profile.device_fingerprint}</p>
-            <p className="security-info">To remove this key, first approve a fresh request with your main phone on the <Link href="/services/pipeline">login pipeline</Link>, then enter your current password. Lost-phone replacement needs operator assistance in this version.</p>
+            <p className="security-info">To remove this key, first approve a fresh request with your main phone on the <Link href="/login">sign-in page</Link>, then enter your current password. Lost-phone replacement needs operator assistance in this version.</p>
             <label className="field" htmlFor="device-password">Current password to remove this device
               <input id="device-password" type="password" autoComplete="current-password" value={password}
                 onChange={event => setPassword(event.target.value)} maxLength={128} />

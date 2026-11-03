@@ -16,7 +16,7 @@ UCM is a self-hosted authentication service and reusable account portal. Website
 - Five-minute RSA-PSS recovery challenges signed over both nonce and new-password digest, with conditional one-time consumption.
 - Native Kotlin/Compose enrollment, biometric signing, main-phone login approval, and workplace-node Bluetooth witness client. Main-phone approval, password reset, and node advertising passed on an API 36.1 emulator; the three-phone physical rehearsal remains.
 - Tiered backend authorization: password session, main-phone remote access, and main phone plus two workplace nodes for office data. Office enforcement stays disabled until physical Bluetooth testing succeeds.
-- [Login pipeline](frontend/src/app/services/pipeline/page.tsx) showing live approval steps and API-protected remote/office examples.
+- [Sign-in page](frontend/src/app/login/page.tsx) showing the approval code, live steps, and automatic workplace check; a [workplace devices page](frontend/src/app/services/pipeline/page.tsx) for enrollment and diagnostics, and an [office-only confidential workspace](frontend/src/app/services/confidential/page.tsx).
 - A clear, responsive portal and independent sample website.
 - A reusable FastAPI dependency and independent backend example that protects its own data by validating the UCM session on each request; sign-out revokes access there immediately.
 - A versioned Alembic schema baseline and copy-based importer for known two- and four-table pre-Alembic databases. Fresh databases are migrated before the API starts; an existing database is marked as current only after its structure matches the baseline.

@@ -53,4 +53,12 @@ def remote_data(session=Depends(trust.require_remote)):
 
 @app.get("/api/data/office", tags=["Trust levels"])
 def office_data(session=Depends(trust.require_office)):
-    return {"level": "office", "content": "Confidential office notes require the main phone and both workplace nodes."}
+    return {
+        "level": "office",
+        "content": "This office workspace is available only while the main phone and both workplace nodes have approved this login.",
+        "documents": [
+            {"title": "Security operations brief", "category": "Internal", "summary": "A demonstration brief for the protected office workspace."},
+            {"title": "Facility access procedure", "category": "Restricted", "summary": "A demonstration procedure shared only after the workplace check."},
+            {"title": "Incident response contacts", "category": "Restricted", "summary": "A demonstration directory for office-authorized staff."},
+        ],
+    }
