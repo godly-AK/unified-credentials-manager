@@ -18,6 +18,8 @@ These are presentation duties, not a statement about who originally wrote each c
 
 During Kartikeya's live office attempt, Kartikeya operates the laptop and narrates, Adarsh operates the enrolled main phone, and Shreyash keeps both already-enrolled nodes advertising. Adarsh then moves to Burp and monitoring after the phone sequence.
 
+The header's **Continue approval** link returns a password-only session to its request code. After remote or office approval, **Sign-in status** returns to the same page, where **Get a new code** starts a fresh request and **Sign out and use another account** prepares the browser for the separate administrator account.
+
 ## Live sequence and handoffs
 
 1. **Kartikeya, 0:00–1:00 — problem and system.** Open the portal and report architecture diagram. Say: “A website can use UCM's account and access API instead of building its own password and recovery system.” Mention the separate Lab Library integration as evidence of reuse.

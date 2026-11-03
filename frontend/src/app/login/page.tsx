@@ -30,6 +30,7 @@ export default function Login() {
   const [contactDone, setContactDone] = useState<ContactDone | null>(null);
   const contactStarted = useRef('');
   const navigating = useRef(false);
+  const autoAdvance = useRef(false);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -47,6 +48,8 @@ export default function Login() {
     setBusy('request'); setError(''); setContactDone(null); setBluetoothMessage('');
     try {
       await api.post('/api/trust/start', {});
+      autoAdvance.current = true;
+      navigating.current = false;
       contactStarted.current = '';
       await refreshStatus();
     } catch (failure) { setError(getApiError(failure, 'Could not start phone approval.')); }
@@ -62,10 +65,9 @@ export default function Login() {
         if (profile.data.data?.password_change_required) { router.replace('/services/security'); return; }
         const trust = await api.get<TrustStatus>('/api/trust/status');
         if (!active) return;
-        if (trust.data.level === 'office') { router.replace('/services/confidential'); return; }
-        if (trust.data.level === 'remote') { router.replace('/services'); return; }
+        autoAdvance.current = trust.data.level === 'password';
         setUsername(trust.data.username); setStatus(trust.data); setPhase('approval');
-        if (trust.data.phone_enrolled && !trust.data.challenge) void startRequest();
+        if (trust.data.level === 'password' && trust.data.phone_enrolled && !trust.data.challenge) void startRequest();
       } catch { if (active) setPhase('credentials'); }
     })();
     return () => { active = false; };
@@ -104,7 +106,7 @@ export default function Login() {
 
   useEffect(() => {
     const challenge = status?.challenge;
-    if (phase !== 'approval' || !challenge?.phone || !status || contactStarted.current === challenge.id ||
+    if (phase !== 'approval' || !autoAdvance.current || !challenge?.phone || !status || contactStarted.current === challenge.id ||
         status.level === 'office') return;
     contactStarted.current = challenge.id;
     if (status.office_trust_enabled) void contact(challenge.id, status.username);
@@ -112,7 +114,7 @@ export default function Login() {
   }, [phase, status, contact]);
 
   useEffect(() => {
-    if (phase !== 'approval' || !status || navigating.current) return;
+    if (phase !== 'approval' || !status || navigating.current || !autoAdvance.current) return;
     if (status.level === 'office') {
       navigating.current = true; announceAuthChange(); router.replace('/services/confidential'); return;
     }
@@ -130,6 +132,7 @@ export default function Login() {
       if (!response.data.success) { setError(response.data.message); return; }
       setPassword(''); announceAuthChange();
       if (response.data.data?.password_change_required) { router.replace('/services/security'); return; }
+      autoAdvance.current = true;
       const trust = await refreshStatus();
       if (!trust) return;
       setPhase('approval');
@@ -152,7 +155,20 @@ export default function Login() {
     finally { setBusy(''); }
   }
 
-  const phoneApproved = Boolean(status?.challenge?.phone);
+  async function switchAccount() {
+    setBusy('logout'); setError('');
+    try {
+      await api.post('/api/logout', {});
+      autoAdvance.current = false;
+      navigating.current = false;
+      contactStarted.current = '';
+      setContactDone(null); setStatus(null); setUsername(''); setPassword('');
+      setBluetoothMessage(''); setPhase('credentials'); announceAuthChange();
+    } catch (failure) { setError(getApiError(failure, 'Could not sign out. Try again.')); }
+    finally { setBusy(''); }
+  }
+
+  const phoneApproved = Boolean(status?.challenge?.phone || status?.level === 'remote' || status?.level === 'office');
   const officeApproved = status?.level === 'office';
   const levels = [
     { name: 'Account', detail: 'Password accepted', done: phase === 'approval' },
@@ -191,22 +207,23 @@ export default function Login() {
         <div className="login-work-footer"><span>New to UCM? <Link href="/register">Create an account</Link></span><span>Forgot your password? Use the UCM Android app.</span></div>
       </>}
       {phase === 'approval' && <>
-        <h2>{status?.phone_enrolled ? 'Approve on your main phone' : 'Set up your main phone'}</h2>
+        <h2>{status?.level === 'office' ? 'Office access is active' : status?.level === 'remote' ? 'Remote access is active' : status?.phone_enrolled ? 'Approve on your main phone' : 'Set up your main phone'}</h2>
         <p className="muted">Signed in as <strong>{status?.username ?? username}</strong>.</p>
         {error && <p className="notice error" role="alert">{error}</p>}
         {!status?.phone_enrolled ? <div className="approval-instruction"><p>Open the UCM Android app, choose <strong>Enroll</strong>, and enroll this account with your current password. Return here to start main-phone approval. Account pages remain locked until that approval.</p><button className="btn secondary small" onClick={() => void (async () => { const updated = await refreshStatus(); if (updated?.phone_enrolled) await startRequest(); })()}>I have enrolled my phone</button></div> : <>
           {status?.challenge && !phoneApproved ? <div className="approval-code"><span>Request code</span><code>{status.challenge.approval_code ?? status.challenge.id}</code><p>Enter this in the app’s <strong>Approve</strong> screen, then use your biometric.</p><small>Expires {new Date(status.challenge.expires_at).toLocaleTimeString()}.</small></div> :
-            phoneApproved ? <div className="approval-instruction success"><strong>Main phone approved</strong><p>Remote access is ready. Checking trusted nodes for office access…</p></div> :
+            phoneApproved ? <div className="approval-instruction success"><strong>{officeApproved ? 'Office access is ready' : 'Main phone approved'}</strong><p>{officeApproved ? 'Confidential data is available while this approval remains active.' : 'Remote access is ready. Two trusted node signatures are needed for office access.'}</p></div> :
               <div className="approval-instruction"><p>The previous code expired. Start another request.</p></div>}
           <button className="btn secondary small" disabled={!!busy} onClick={() => void startRequest()}>Get a new code</button>
           {status?.office_trust_enabled && <div className="login-bluetooth">
             <h3>Trusted nodes</h3><p>{pairing}</p>
             <div className="login-bluetooth-actions"><button className="btn secondary small" disabled={!!busy} onClick={() => void chooseNode()}>Choose a nearby node</button></div>
-            <div className="login-node-states"><span>Distinct node signatures <strong>{status.challenge?.approved_node_count ?? 0} of 2 required</strong></span></div>
+            <div className="login-node-states"><span>Distinct node signatures <strong>{officeApproved ? 'Office grant active' : `${status.challenge?.approved_node_count ?? 0} of 2 required`}</strong></span></div>
             {bluetoothMessage && <p className="login-bluetooth-status" role="status">{bluetoothMessage}</p>}
           </div>}
-          {phoneApproved && <button className="text-link login-continue" onClick={() => router.replace('/services')}>Continue with remote access</button>}
+          {phoneApproved && <button className="text-link login-continue" onClick={() => router.replace(officeApproved ? '/services/confidential' : '/services')}>{officeApproved ? 'Continue to confidential access' : 'Continue with remote access'}</button>}
         </>}
+        <button className="text-link login-continue" disabled={!!busy} onClick={() => void switchAccount()}>Sign out and use another account</button>
       </>}
     </section>
   </main>;

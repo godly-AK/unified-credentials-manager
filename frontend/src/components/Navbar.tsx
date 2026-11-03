@@ -6,12 +6,12 @@ import api from '@/lib/api';
 
 export default function Navbar() {
   const pathname = usePathname() ?? '';
-  const [access, setAccess] = useState<'guest' | 'account' | 'office'>('guest');
+  const [access, setAccess] = useState<'guest' | 'pending' | 'remote' | 'office'>('guest');
   const checkAccess = useCallback(async () => {
     try {
       await api.get('/api/me');
       const trust = await api.get<{ level: string }>('/api/trust/status');
-      setAccess(trust.data.level === 'office' ? 'office' : 'account');
+      setAccess(trust.data.level === 'office' ? 'office' : trust.data.level === 'remote' ? 'remote' : 'pending');
     } catch { setAccess('guest'); }
   }, []);
   useEffect(() => {
@@ -34,9 +34,11 @@ export default function Navbar() {
       </Link>
       <nav className="nav-links" aria-label="Main navigation">
         <Link className="nav-project" href="/about" aria-current={pathname === '/about' ? 'page' : undefined}>How it works</Link>
-        {access !== 'guest' && <Link href="/services" aria-current={pathname === '/services' ? 'page' : undefined}>My account</Link>}
+        {(access === 'remote' || access === 'office') && <Link href="/services" aria-current={pathname === '/services' ? 'page' : undefined}>My account</Link>}
         {access === 'office' && <Link href="/services/confidential" aria-current={pathname === '/services/confidential' ? 'page' : undefined}>Confidential</Link>}
         {access === 'guest' && <Link className="nav-signin" href="/login" aria-current={pathname === '/login' ? 'page' : undefined}>Sign in</Link>}
+        {access === 'pending' && <Link className="nav-signin" href="/login" aria-current={pathname === '/login' ? 'page' : undefined}>Continue approval</Link>}
+        {(access === 'remote' || access === 'office') && <Link href="/login" aria-current={pathname === '/login' ? 'page' : undefined}>Sign-in status</Link>}
       </nav>
     </header>
   );
