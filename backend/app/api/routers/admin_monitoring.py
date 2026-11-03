@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.routers.trust import require_remote
-from app.db.models import AuthSession, SecurityAlertReview, SecurityEvent, User
+from app.db.models import AuthSession, LoginTrustChallenge, SecurityAlertReview, SecurityEvent, User
 from app.services.audit_service import record_security_event
 from app.services.session_service import utc
 
@@ -52,6 +52,40 @@ def summary(_: AuthSession = Depends(require_monitoring_admin), db: Session = De
         "failed_logins": recent.filter(SecurityEvent.event_type == "LOGIN_FAILED").count(),
         "high_risk_events": recent.filter(SecurityEvent.risk_level == "HIGH").count(),
         "open_high_risk_alerts": open_high or 0,
+    }
+
+
+@router.get("/overview")
+def overview(_: AuthSession = Depends(require_monitoring_admin), db: Session = Depends(get_db)):
+    """Small, bounded aggregates for the administrator's live dashboard."""
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=7)
+    risk_rows = db.query(SecurityEvent.risk_level, func.count(SecurityEvent.id)).filter(
+        SecurityEvent.created_at >= since,
+    ).group_by(SecurityEvent.risk_level).all()
+    type_rows = db.query(SecurityEvent.event_type, func.count(SecurityEvent.id)).filter(
+        SecurityEvent.created_at >= since,
+    ).group_by(SecurityEvent.event_type).order_by(func.count(SecurityEvent.id).desc()).limit(6).all()
+    day_rows = db.query(func.date(SecurityEvent.created_at), func.count(SecurityEvent.id)).filter(
+        SecurityEvent.created_at >= since,
+    ).group_by(func.date(SecurityEvent.created_at)).all()
+    daily = {str(day): count for day, count in day_rows}
+    requests = db.query(LoginTrustChallenge).filter(
+        LoginTrustChallenge.created_at >= since,
+    ).order_by(LoginTrustChallenge.created_at.desc()).limit(25).all()
+    return {
+        "period_days": 7,
+        "risk_counts": {risk: count for risk, count in risk_rows},
+        "top_event_types": [{"event_type": event_type, "count": count} for event_type, count in type_rows],
+        "daily_events": [{"day": (now - timedelta(days=offset)).date().isoformat(),
+                          "count": daily.get((now - timedelta(days=offset)).date().isoformat(), 0)}
+                         for offset in range(6, -1, -1)],
+        "requests": [{"id": row.id, "username": row.username,
+                      "created_at": utc(row.created_at).isoformat(),
+                      "phone": bool(row.phone_approved_at),
+                      "node_a": bool(row.node_a_approved_at),
+                      "node_b": bool(row.node_b_approved_at),
+                      "expired": utc(row.expires_at) <= now} for row in requests],
     }
 
 

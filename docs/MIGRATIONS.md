@@ -1,6 +1,6 @@
 # Database migrations and pre-Alembic imports
 
-UCM uses Alembic for versioned schema changes. The Windows demo launcher and backend Docker image run `python -m app.db.migrate` before starting the API. A fresh database receives both the initial schema and the administrator-monitoring revision `b7e942d0c531`. An existing database at `02ab954e12a1` is upgraded, adding an `is_admin` flag defaulting to false and an alert-review table. An unversioned database is accepted only when it exactly matches a known current or initial UCM schema; the initial schema is stamped and then upgraded. An incompatible database stops with an error.
+UCM uses Alembic for versioned schema changes. The Windows demo launcher and backend Docker image run `python -m app.db.migrate` before starting the API. A fresh database receives the initial schema, administrator-monitoring revision `b7e942d0c531`, and short-request-code revision `c1d64a8f29b0`. An existing database at `02ab954e12a1` is upgraded, adding an `is_admin` flag defaulting to false, an alert-review table, and a nullable indexed request code. An unversioned database is accepted only when it exactly matches a known UCM schema; it is stamped and upgraded. An incompatible database stops with an error.
 
 On November 3, the persistent SQLite demo was backed up and upgraded from `02ab954e12a1` to `b7e942d0c531` with **21 users and 149 audit events unchanged**. A separate copy with its Alembic version table removed also followed the baseline-and-upgrade path with those counts preserved. The backup stays in ignored `.demo/`.
 

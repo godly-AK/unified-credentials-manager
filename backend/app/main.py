@@ -12,7 +12,7 @@ from app.api.dependencies import require_user
 app = FastAPI(
     title="Unified Credentials Manager",
     description="Self-hosted authentication and credential-security framework.",
-    version="0.3.0",
+    version="0.4.0",
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

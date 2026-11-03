@@ -14,6 +14,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -140,8 +142,9 @@ private fun AuthenticatorScreen(activity: MainActivity) {
                 }) { Text("Clear local node") }
             }
         } else if (approval) {
-            OutlinedTextField(approvalId, { approvalId = it }, label = { Text("Login request ID from website") },
-                singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(approvalId, { approvalId = it }, label = { Text("8-digit login request code") },
+                singleLine = true, enabled = !busy, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.fillMaxWidth())
             Text("Approve only a request you started on the UCM website.", style = MaterialTheme.typography.bodySmall)
         } else if (!recovery) {
             OutlinedTextField(password, { password = it }, label = { Text("Current password") }, visualTransformation = PasswordVisualTransformation(),
@@ -184,17 +187,21 @@ private fun AuthenticatorScreen(activity: MainActivity) {
                                 activity.startWorkplaceNode(api, account, nodeSlot, nodeId) { status = it }
                             }
                         } else if (approval) {
-                            val id = approvalId.trim()
-                            require(id.isNotEmpty()) { "Enter the request ID shown on the website." }
-                            val challenge = api.request("/api/trust/challenge/" + URLEncoder.encode(id, "UTF-8"))
+                            val input = approvalId.trim()
+                            require(input.isNotEmpty()) { "Enter the request code shown on the website." }
+                            val path = if (input.length == 8 && input.all { it in '0'..'9' })
+                                "/api/trust/challenge-by-code/$input"
+                                else "/api/trust/challenge/" + URLEncoder.encode(input, "UTF-8")
+                            val challenge = api.request(path)
                             require(challenge.getString("username") == account) { "This request belongs to another account." }
+                            val id = challenge.getString("challenge_id")
                             val signature = activity.signWithBiometric(keys,
                                 LoginTrustMessage.bytes("phone", id, challenge.getString("nonce")),
                                 "Approve remote access")
                             val result = api.request("/api/trust/phone-approve", JSONObject()
                                 .put("challenge_id", id)
                                 .put("signature_b64", Base64.getEncoder().encodeToString(signature)))
-                            status = "Approved. Access level: " + result.getString("level") + ". Refresh the website."
+                            status = "Approved. The website updates automatically. Access level: " + result.getString("level") + "."
                             approvalId = ""
                         } else if (recovery) {
                             require(newPassword == confirmation) { "The new passwords do not match." }

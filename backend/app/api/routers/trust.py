@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db, require_session
@@ -158,10 +159,10 @@ def status(session: AuthSession = Depends(require_session), db: Session = Depend
     nodes = db.query(WorkplaceNode).filter(WorkplaceNode.username == session.username,
                                            WorkplaceNode.revoked_at.is_(None)).all()
     user = db.get(User, session.username)
-    return {"level": trust_status(db, session), "phone_enrolled": bool(user.public_key),
+    return {"username": session.username, "level": trust_status(db, session), "phone_enrolled": bool(user.public_key),
             "office_trust_enabled": settings.office_trust_enabled,
             "nodes": [{"id": n.id, "slot": n.slot, "label": n.label} for n in nodes],
-            "challenge": ({"id": challenge.id, "nonce": challenge.nonce,
+            "challenge": ({"id": challenge.id, "approval_code": challenge.approval_code,
                            "expires_at": utc(challenge.expires_at).isoformat(),
                            "phone": bool(challenge.phone_approved_at),
                            "node_a": bool(challenge.node_a_approved_at),
@@ -174,15 +175,52 @@ def status(session: AuthSession = Depends(require_session), db: Session = Depend
 def start(request: Request, session: AuthSession = Depends(require_session), db: Session = Depends(get_db)):
     if not db.get(User, session.username).public_key:
         raise HTTPException(status_code=409, detail="Enroll your main phone before requesting trust approval.")
-    db.query(LoginTrustChallenge).filter(LoginTrustChallenge.session_id == session.id).delete()
     now = datetime.now(timezone.utc)
-    challenge = LoginTrustChallenge(id=str(uuid.uuid4()), username=session.username, session_id=session.id,
-                                    nonce=secrets.token_urlsafe(32), created_at=now,
-                                    expires_at=now + timedelta(minutes=3))
-    db.add(challenge)
+    db.query(LoginTrustChallenge).filter(
+        LoginTrustChallenge.session_id == session.id, LoginTrustChallenge.expires_at > now,
+    ).update({LoginTrustChallenge.expires_at: now}, synchronize_session=False)
+    # A fresh request starts from the password level. An earlier office grant
+    # must not make a newly pending request appear complete.
+    db.query(SessionTrust).filter(SessionTrust.session_id == session.id).delete(synchronize_session=False)
+    for _ in range(10):
+        challenge = LoginTrustChallenge(
+            id=str(uuid.uuid4()), username=session.username, session_id=session.id,
+            nonce=secrets.token_urlsafe(32), approval_code=f"{secrets.randbelow(100_000_000):08d}",
+            created_at=now, expires_at=now + timedelta(minutes=3),
+        )
+        try:
+            with db.begin_nested():
+                db.add(challenge)
+                db.flush()
+            break
+        except IntegrityError:
+            continue
+    else:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Could not create a unique request code. Try again.")
+    record_security_event(db, event_type="TRUST_REQUEST_STARTED", username=session.username,
+                          ip_address=request.client.host if request.client else None,
+                          details={"request_id": challenge.id})
     db.commit()
-    return {"challenge_id": challenge.id, "expires_at": utc(challenge.expires_at).isoformat(),
+    return {"challenge_id": challenge.id, "approval_code": challenge.approval_code,
+            "expires_at": utc(challenge.expires_at).isoformat(),
             "message": "Approve on your main phone. Workplace nodes may then approve the office level."}
+
+
+@router.get("/challenge-by-code/{approval_code}")
+@limiter.limit("10/minute")
+def challenge_by_code(approval_code: str, request: Request, db: Session = Depends(get_db)):
+    if len(approval_code) != 8 or not approval_code.isascii() or not approval_code.isdecimal():
+        raise HTTPException(status_code=400, detail="Approval code is invalid or expired.")
+    challenge = db.query(LoginTrustChallenge).filter(LoginTrustChallenge.approval_code == approval_code).first()
+    if not challenge:
+        raise HTTPException(status_code=400, detail="Approval code is invalid or expired.")
+    try:
+        challenge_for_approval(db, challenge.id)
+    except HTTPException:
+        raise HTTPException(status_code=400, detail="Approval code is invalid or expired.")
+    return {"challenge_id": challenge.id, "username": challenge.username, "nonce": challenge.nonce,
+            "expires_at": utc(challenge.expires_at).isoformat()}
 
 
 @router.get("/challenge/{challenge_id}")
@@ -204,6 +242,9 @@ def phone_approve(payload: SignedApproval, request: Request, db: Session = Depen
         raise HTTPException(status_code=400, detail="The main phone is not enrolled.")
     verify(key, payload.signature_b64, message(challenge, "phone"))
     challenge.phone_approved_at = datetime.now(timezone.utc)
+    record_security_event(db, event_type="TRUST_PHONE_APPROVED", username=challenge.username,
+                          ip_address=request.client.host if request.client else None,
+                          details={"request_id": challenge.id})
     return {"level": update_trust(db, challenge, request)}
 
 
@@ -221,6 +262,9 @@ def node_approve(payload: SignedNodeApproval, request: Request, db: Session = De
         raise HTTPException(status_code=409, detail="This node has already approved.")
     verify_node(node.public_key, payload.signature_b64, message(challenge, "node-" + node.slot))
     setattr(challenge, field, datetime.now(timezone.utc))
+    record_security_event(db, event_type="TRUST_NODE_APPROVED", username=challenge.username,
+                          ip_address=request.client.host if request.client else None,
+                          details={"request_id": challenge.id, "slot": node.slot})
     return {"level": update_trust(db, challenge, request)}
 
 

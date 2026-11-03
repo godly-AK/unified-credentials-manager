@@ -17,6 +17,13 @@ type SecurityEvent = {
 type Review = { reviewed_by: string; note: string; reviewed_at: string };
 type Alert = SecurityEvent & { review: Review | null };
 type Summary = { period_hours: number; events: number; failed_logins: number; high_risk_events: number; open_high_risk_alerts: number };
+type Overview = {
+  period_days: number;
+  risk_counts: Partial<Record<Risk, number>>;
+  top_event_types: { event_type: string; count: number }[];
+  daily_events: { day: string; count: number }[];
+  requests: { id: string; username: string; created_at: string; phone: boolean; node_a: boolean; node_b: boolean; expired: boolean }[];
+};
 type Filters = { username: string; risk: '' | Risk; event_type: string };
 type Status = 'loading' | 'ready' | 'needs-phone' | 'forbidden' | 'error';
 
@@ -34,6 +41,7 @@ function describeDetails(details: Record<string, unknown>) {
 export default function MonitoringPage() {
   const [status, setStatus] = useState<Status>('loading');
   const [summary, setSummary] = useState<Summary>();
+  const [overview, setOverview] = useState<Overview>();
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
@@ -58,12 +66,14 @@ export default function MonitoringPage() {
       const profile = await api.get('/api/me');
       if (!profile.data.data.is_monitoring_admin) { setStatus('forbidden'); return; }
       try {
-        const [counts, listed, highRisk] = await Promise.all([
+        const [counts, listed, highRisk, overviewResult] = await Promise.all([
           api.get<Summary>('/api/admin/monitoring/summary'),
           api.get<{ events: SecurityEvent[]; next_before_id: number | null }>('/api/admin/monitoring/events', { params: eventParams() }),
           api.get<{ alerts: Alert[]; next_before_id: number | null }>('/api/admin/monitoring/alerts'),
+          api.get<Overview>('/api/admin/monitoring/overview'),
         ]);
         setSummary(counts.data);
+        setOverview(overviewResult.data);
         setEvents(listed.data.events);
         setNextBefore(listed.data.next_before_id);
         setAlerts(highRisk.data.alerts);
@@ -138,6 +148,25 @@ export default function MonitoringPage() {
         <div className="panel"><span>High-risk events</span><strong>{summary?.high_risk_events ?? 0}</strong></div>
         <div className="panel"><span>Open alerts</span><strong>{summary?.open_high_risk_alerts ?? 0}</strong></div>
       </div>
+      {overview && <div className="monitor-visual-grid">
+        <section className="panel monitor-section"><h2>Activity by day</h2><p className="muted">Security events during the last seven days.</p>
+          <div className="monitor-bars" role="img" aria-label={overview.daily_events.map(item => `${item.day}: ${item.count} events`).join('; ')}>
+            {overview.daily_events.map(item => <div className="monitor-bar-column" key={item.day}>
+              <strong>{item.count}</strong><div className="monitor-bar-track"><span style={{ height: `${Math.max(item.count ? 8 : 0, item.count / Math.max(1, ...overview.daily_events.map(day => day.count)) * 100)}%` }} /></div>
+              <small>{new Date(`${item.day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</small>
+            </div>)}
+          </div>
+        </section>
+        <section className="panel monitor-section"><h2>Risk analysis</h2><p className="muted">Events are classified by server rules. A high risk label calls for review; it is not proof of an attack.</p>
+          <div className="monitor-risk-counts">{(['HIGH', 'MEDIUM', 'LOW'] as const).map(risk => <div key={risk}><span className={`monitor-risk risk-${risk.toLowerCase()}`}>{risk.toLowerCase()}</span><strong>{overview.risk_counts[risk] ?? 0}</strong></div>)}</div>
+          <h3>Most common events</h3><div className="monitor-top-events">{overview.top_event_types.map(item => <div key={item.event_type}><span>{formatEvent(item.event_type)}</span><strong>{item.count}</strong></div>)}</div>
+        </section>
+      </div>}
+      {overview && <section className="panel monitor-section"><div className="panel-heading"><div><h2>Login requests</h2><p className="muted">Latest 25 requests from the last seven days. Each tablet must sign the same request for office access.</p></div></div>
+        <div className="table-scroll"><table><thead><tr><th>When</th><th>Account</th><th>Pixel</th><th>Node A</th><th>Node B</th><th>Result</th></tr></thead><tbody>
+          {overview.requests.map(item => <tr key={item.id}><td>{formatTime(item.created_at)}</td><td>{item.username}</td><td>{item.phone ? 'Approved' : 'Waiting'}</td><td>{item.node_a ? 'Approved' : 'Waiting'}</td><td>{item.node_b ? 'Approved' : 'Waiting'}</td><td>{item.phone && item.node_a && item.node_b ? 'Office' : item.phone ? 'Remote' : item.expired ? 'Expired' : 'Pending'}</td></tr>)}
+        </tbody></table></div>{overview.requests.length === 0 && <p className="empty">No login requests in this period.</p>}
+      </section>}
       {error && <p className="notice error" role="alert">{error}</p>}
       <section className="panel monitor-section">
         <div className="panel-heading"><div><h2>High-risk alerts</h2><p className="muted">Review the event and record what you checked. The source event stays in the audit trail.</p></div><button className="btn secondary small" onClick={() => void load()}>Refresh</button></div>

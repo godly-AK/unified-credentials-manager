@@ -7,7 +7,7 @@ The temporary ngrok tunnel supplies one HTTPS address for the portal and API. UC
 ## Prepare
 
 1. Install ngrok using its [official Windows instructions](https://ngrok.com/download/windows) and add your account's authtoken. Choose the HTTPS dev domain assigned to your account. Keep that exact address for every enrollment and test.
-2. Install the backend and frontend dependencies from the [README](../README.md), and install the current [Android debug APK](../output/UCM-lab-debug-android14-2026-11-03.apk) on all three devices. Version 0.3.0 supports two Bluetooth write modes and pre-fills the current lab URL and `progress_demo` username in the debug build. **Update in place** to keep enrolled Keystore keys. Android 15/API 35 or newer and a strong enrolled biometric are required for the Pixel main phone. Android 14/API 34 or newer is sufficient for a workplace tablet if it supports BLE advertising; the app will report when advertising is unavailable. This is a debug-signed lab APK, not a store or production release. The older `UCM-lab-debug-2026-11-03.apk` requires Android 15 and will not install on Android 14.
+2. Install the backend and frontend dependencies from the [README](../README.md), and install the current [Android debug APK](../output/UCM-lab-debug-v0.4.0-android14-2026-11-03.apk) on all three devices. Version 0.4.0 accepts the new eight-digit request code, supports both Bluetooth write modes, and pre-fills the current lab URL and `progress_demo` username in the debug build. **Update in place** to keep enrolled Keystore keys. Android 15/API 35 or newer and a strong enrolled biometric are required for the Pixel main phone. Android 14/API 34 or newer is sufficient for a workplace tablet if it supports BLE advertising; the app will report when advertising is unavailable. This is a debug-signed lab APK, not a store or production release.
 3. Stop the normal SQLite demo with `scripts/Stop-Demo.ps1`. The phone lab uses ports 3000 and 8000 but a separate database and encryption key in ignored `.demo/phone-lab/`.
 4. From the repository root, replace the example URL below with your assigned HTTPS address:
 
@@ -32,10 +32,10 @@ Use a fresh synthetic account. Keep the two workplace phones apart from the main
 | Step | Expected result | Actual result / evidence |
 |---|---|---|
 | Register and sign in on the HTTPS portal | Password session opens; remote and office data stay locked | To record |
-| Enroll main phone; start a fresh request; approve with biometric | Remote opens; office stays locked | To record |
+| Enroll main phone; sign in; enter the eight-digit code in the Pixel app and approve with biometric | The website starts the request automatically. Remote opens after the Pixel signs. The short code identifies the request; it is not the security factor. | To record |
 | Enroll node A and node B using separate one-time codes | Both slots appear with different node IDs | To record |
 | Start BLE witness mode on both nodes and grant each browser permission | Browser sees both saved devices | To record |
-| Start a new request and contact both nodes near the laptop | Both nodes report signed approvals; office data opens | To record |
+| Keep both nodes advertising, then approve a new Pixel request | The browser automatically contacts previously permitted tablets; both signed reports open office data. The page shows connection and approval progress. | To record |
 | After an office grant, sign out and sign back in (or wait for its ten-minute expiry); switch off node B, start another request, and contact devices | Pixel approval and node A can open remote access, but the fresh session cannot reach office level | To record |
 | Restore node B; start a fresh request and obtain Pixel plus both tablet approvals | Office level opens again | To record |
 | Revoke node B through the website or operator command | Existing office grant ends immediately; a new request cannot use B | To record |
@@ -43,13 +43,25 @@ Use a fresh synthetic account. Keep the two workplace phones apart from the main
 
 Record the three Android versions, browser version, the approximate phone-to-laptop distances, request IDs, screenshots of status and denial, and corresponding audit events. Do not include passwords, session cookies, CSRF tokens, private keys, or one-time enrollment codes in screenshots. A stopped node prevents a **new** grant; an already issued grant lasts up to ten minutes unless that node is revoked. Bluetooth presence is not an exact indoor location and does not rule out a live relay attack.
 
-For the first Bluetooth permission grant, keep only tablet A advertising, click **Select node A tablet** in the browser, and choose A. If the browser chooser does not clearly distinguish the tablets, close A's app temporarily, start advertising on B, click **Select node B tablet**, and choose B. Reopen A's app and press **Start Bluetooth witness** again. Both tablets should then remain on the app's **Node** screen with Bluetooth enabled. On the first Start press, Android may ask for Nearby devices permission and the app may ask you to press Start again. Selecting a slot again replaces its earlier browser choice, so extra or stale paired entries are not contacted. A fresh website approval automatically tries the two tablets selected in that tab; use **Contact both phones now** if a tablet was missed. Keep the pipeline tab open after selection; a reload requires selecting both again. Keep the main-phone password reset until the end because it revokes all web sessions.
+For the first Bluetooth permission grant, keep only tablet A advertising, click **Select node A tablet** in the browser, and choose A. If the browser chooser does not clearly distinguish the tablets, close A's app temporarily, start advertising on B, click **Select node B tablet**, and choose B. Reopen A's app and press **Start Bluetooth witness** again. Both tablets should then remain on the app's **Node** screen with Bluetooth enabled. On the first Start press, Android may ask for Nearby devices permission and the app may ask you to press Start again. Selecting a slot again replaces its earlier browser choice. A fresh website approval automatically tries the permitted tablets; use **Contact both phones now** if a tablet was missed. Chrome/Edge can restore previously permitted devices after reload when `getDevices()` is available. If the page reports that restore is unavailable, select both in that tab again. Websites cannot silently discover Bluetooth MAC addresses or bypass the browser's first-time device chooser. Keep the main-phone password reset until the end because it revokes all web sessions.
 
 If the chooser labels a tablet **Paired** but the website reports a **connect** or **find service** error, the browser has identified the tablet but has not finished the separate GATT connection. Use a regular desktop Chrome or Edge window, keep the node app visible with its **advertising** status, and select that tablet's slot again. The website now names the failed slot and connection stage; record the exact message. A successful Bluetooth write is still only the first step: wait for the tablet's **approved request** message and the corresponding node check on the website.
 
 If an Android 15 tablet reports **GATT Error Unknown** on **send request** while the Android 14 tablet succeeds, update both tablets to version 0.3.0. The new APK exposes a second write mode, which the website uses when available. Its **received a Bluetooth request** status shows whether the request arrived even if later server approval fails. This is a physical workaround under test, not a completed acceptance result. If the tunnel URL changes, edit the pre-filled server field to the new HTTPS origin before enrolling or approving.
 
 For operator emergency response, use the [node inventory and revocation commands](TRUST_LEVELS.md#operator-response-to-a-lost-workplace-node) against the phone-lab database. Verify the reported loss before revocation. On this laptop, the phone-lab database path is `.demo/phone-lab/ucm.sqlite3`; set `DATABASE_URL_OVERRIDE` to its absolute `sqlite:///` URL before running an operator command from `backend/`.
+
+For the separate administrator account, register a new username on the portal and enroll its main phone before granting its monitoring role. Keep `progress_demo` an ordinary account. From the repository root in a new PowerShell terminal, run:
+
+```powershell
+$env:DATA_ENCRYPTION_KEY = (Get-Content -Raw .demo/phone-lab/data-encryption-key.txt).Trim()
+$env:DATABASE_URL_OVERRIDE = 'sqlite:///' + (Join-Path (Resolve-Path .demo/phone-lab).Path 'ucm.sqlite3').Replace('\', '/')
+Push-Location backend
+..\.venv\Scripts\python.exe -m app.admin.roles grant --username YOUR_ADMIN_USERNAME --reason "Lab monitoring account approved for demonstration"
+Pop-Location
+```
+
+The command asks you to type the username again and signs that account out. Sign back in, approve its new request on the phone, then open `/services/monitoring` from **Your account**. The role does not change `progress_demo`.
 
 ## Finish
 
@@ -65,5 +77,7 @@ The isolated lab database and encryption key remain for a repeat rehearsal. The 
 ## Current evidence and limit
 
 On November 3, 2026, the launcher was first smoke-tested with a placeholder HTTPS origin. Later the live ngrok origin passed all 19 HTTP security checks with a synthetic account, including Secure and HttpOnly cookie handling, CSRF rejection, foreign-origin rejection, and logout. The version 0.3.0 Android 14 compatible APK was served at `/downloads/ucm-android14.apk` with HTTP 200 and a streamed SHA-256 matching the local build.
+
+Version 0.4.0 adds the short request code, automatic pipeline start after password login, automatic contact of previously permitted tablets after Pixel approval, visible connection messages, and administrator request and risk charts. Backend tests (52), the frontend build, Android unit tests, lint, and debug build passed locally. The APK SHA-256 is `b252126c9d29c9e64a2e63c7152e75afcbe763beb5559df73a83bdde32b82531`; its minimum Android API is 34. The live tunnel returned HTTP 200 for the updated portal and APK, and a full APK download matched the local SHA-256. The physical three-device quorum still needs a fresh check with the phones.
 
 A first physical rehearsal enrolled both Samsung workplace nodes. The Pixel and node A approved the same request, opening remote access, while office access stayed locked because node B did not approve. The Android 15 node B tablet advertised and could be paired from the laptop, but the browser reported **GATT Error Unknown** at the request write; the same error occurred when B was selected alone. The app remained on **advertising** and the backend received no node B approval. Version 0.3.0 adds a response-free write mode and a **received a Bluetooth request** status to investigate this failure. This path and the remaining physical result table are still unverified until the updated tablet is tested.

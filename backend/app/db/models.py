@@ -120,6 +120,7 @@ class LoginTrustChallenge(Base):
     username = Column(String, ForeignKey("users.username", ondelete="CASCADE"), nullable=False, index=True)
     session_id = Column(String, ForeignKey("auth_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     nonce = Column(String, nullable=False)
+    approval_code = Column(String(8), unique=True, index=True, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
     phone_approved_at = Column(TIMESTAMP(timezone=True), nullable=True)

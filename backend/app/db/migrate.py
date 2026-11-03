@@ -12,7 +12,7 @@ import app.db.models  # noqa: F401 - populate Base.metadata
 INITIAL_REVISION = "02ab954e12a1"
 
 
-def validate_existing_schema(*, initial: bool = False) -> None:
+def validate_existing_schema(*, initial: bool = False, previous_head: bool = False) -> None:
     inspector = inspect(engine)
     actual_tables = {name for name in inspector.get_table_names()
                      if not name.startswith("sqlite_") and name != "alembic_version"}
@@ -32,6 +32,8 @@ def validate_existing_schema(*, initial: bool = False) -> None:
         expected_columns = set(table.columns.keys())
         if initial and table_name == "users":
             expected_columns.remove("is_admin")
+        if (initial or previous_head) and table_name == "login_trust_challenges":
+            expected_columns.remove("approval_code")
         if actual_columns != expected_columns:
             raise RuntimeError(
                 f"Existing {table_name} columns differ. Missing: {sorted(expected_columns - actual_columns)}; "
@@ -55,6 +57,8 @@ def validate_existing_schema(*, initial: bool = False) -> None:
             raise RuntimeError(f"Existing {table_name} foreign keys differ; no migration was applied.")
         actual_indexes = {(index["name"], bool(index["unique"])) for index in inspector.get_indexes(table_name)}
         expected_indexes = {(index.name, bool(index.unique)) for index in table.indexes}
+        if (initial or previous_head) and table_name == "login_trust_challenges":
+            expected_indexes.remove(("ix_login_trust_challenges_approval_code", True))
         if not expected_indexes <= actual_indexes:
             raise RuntimeError(
                 f"Existing {table_name} indexes are incomplete: {sorted(expected_indexes - actual_indexes)}. "
@@ -71,8 +75,13 @@ def upgrade() -> None:
         try:
             validate_existing_schema()
         except RuntimeError:
-            validate_existing_schema(initial=True)
-            command.stamp(config, INITIAL_REVISION)
+            try:
+                validate_existing_schema(previous_head=True)
+            except RuntimeError:
+                validate_existing_schema(initial=True)
+                command.stamp(config, INITIAL_REVISION)
+            else:
+                command.stamp(config, "b7e942d0c531")
         else:
             command.stamp(config, "head")
         command.upgrade(config, "head")

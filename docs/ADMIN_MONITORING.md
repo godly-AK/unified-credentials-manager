@@ -25,8 +25,8 @@ Both commands require the exact username to be typed again. They need database-h
 
 ## What an administrator can do
 
-1. Sign in to the website, open **Login pipeline**, start a fresh request, and approve it on the enrolled main phone.
-2. Open **Security monitoring** from the account page. The summary shows the past 24 hours of events, failed sign-ins, and high-risk events, plus all currently open high-risk alerts.
+1. Sign in to the website. The **Login pipeline** starts a request automatically; enter its eight-digit code in the enrolled main phone and approve.
+2. Open **Security monitoring** from the account page. The summary shows the past 24 hours of events, failed sign-ins, and high-risk events, plus all currently open high-risk alerts. The seven-day charts show activity by day and server-assigned risk, and the request table shows the last 25 Pixel and workplace-node approvals.
 3. Filter events by exact username, risk, or event type; page through older results. View high-risk events and their recorded details.
 4. Record a review note on a high-risk event. UCM keeps the original event, stores the reviewer and time separately, and records a `SECURITY_ALERT_REVIEWED` event. A second review of the same alert is rejected.
 
@@ -34,7 +34,7 @@ The backend creates a high-risk `SUSPICIOUS_LOGIN_BURST` event on each fifth rec
 
 ## Verification and limits
 
-Automated tests cover role defaults, phone-enrollment requirement, session invalidation on grant and revoke, phone step-up, bearer denial, cross-account filtering, pagination, CSRF, one-time review, and audit records. The backend suite has **51 passing tests**. A local browser rehearsal with a disposable synthetic admin account opened the page after a signed approval, recorded a review, and returned to login immediately after the role was revoked. The original demo database migrated from revision `02ab954e12a1` to `b7e942d0c531` with **21 users and 149 events preserved**; a separate unversioned copy also migrated while preserving those counts.
+Automated tests cover role defaults, phone-enrollment requirement, session invalidation on grant and revoke, phone step-up, bearer denial, cross-account filtering, pagination, CSRF, one-time review, request aggregates, and audit records. The backend suite has **52 passing tests**. A local browser rehearsal with a disposable synthetic admin account opened the page after a signed approval, recorded a review, and returned to login immediately after the role was revoked. The original demo database migrated from revision `02ab954e12a1` to `b7e942d0c531` with **21 users and 149 events preserved**; a separate unversioned copy also migrated while preserving those counts.
 
 An isolated PostgreSQL/Caddy deployment rehearsal also reached revision `b7e942d0c531`, created the administrator flag and review table, and passed the 19-check HTTPS security probe with its local CA trusted. A newly registered account had `is_admin = false`; the unauthenticated monitoring endpoint returned HTTP 401. This verifies the production-style migration and ordinary-user default, not a physical phone or public deployment.
 

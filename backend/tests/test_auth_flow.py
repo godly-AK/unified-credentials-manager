@@ -179,6 +179,12 @@ def test_administrator_monitoring_requires_operator_role_and_phone_approval(clie
     assert summary.json()["failed_logins"] >= 5
     assert summary.json()["open_high_risk_alerts"] >= 1
     assert summary.headers["cache-control"] == "no-store"
+    overview = client.get("/api/admin/monitoring/overview")
+    assert overview.status_code == 200
+    assert len(overview.json()["daily_events"]) == 7
+    assert overview.json()["risk_counts"]["HIGH"] >= 1
+    assert overview.json()["requests"]
+    assert "approval_code" not in overview.json()["requests"][0]
     events = client.get("/api/admin/monitoring/events", params={"username": "other_student", "risk": "HIGH"})
     assert events.status_code == 200
     assert any(row["event_type"] == "SUSPICIOUS_LOGIN_BURST" for row in events.json()["events"])
@@ -427,6 +433,8 @@ def test_tiered_access_requires_phone_and_two_distinct_nodes(client, monkeypatch
 
     assert client.get("/api/data/remote").status_code == 403
     assert client.get("/api/data/office").status_code == 403
+
+
     unsupported = ec.generate_private_key(ec.SECP384R1())
     assert client.post("/api/trust/nodes", json={"slot": "A", "label": "Wrong curve",
         "public_key_pem": pem(unsupported), "current_password": PASSWORD}).status_code == 400
@@ -461,6 +469,30 @@ def test_tiered_access_requires_phone_and_two_distinct_nodes(client, monkeypatch
     assert revoked.status_code == 200
     assert client.get("/api/data/office").status_code == 403
     assert client.get("/api/data/remote").status_code == 403
+
+
+def test_short_request_code_resolves_and_new_request_clears_old_access(client):
+    phone = enroll(client)
+    first = client.post("/api/trust/start", json={}).json()
+    code = first["approval_code"]
+    assert len(code) == 8 and code.isascii() and code.isdecimal()
+    resolved = client.get("/api/trust/challenge-by-code/" + code)
+    assert resolved.status_code == 200
+    assert resolved.json()["challenge_id"] == first["challenge_id"]
+    assert client.get("/api/trust/challenge-by-code/1234567x").status_code == 400
+    challenge = resolved.json()
+    value = f"UCM:login-trust:v1\nphone\n{challenge['challenge_id']}\n{challenge['nonce']}".encode()
+    signature = base64.b64encode(phone.sign(value, padding.PSS(
+        mgf=padding.MGF1(hashes.SHA256()), salt_length=32), hashes.SHA256())).decode()
+    assert client.post("/api/trust/phone-approve", json={
+        "challenge_id": challenge["challenge_id"], "signature_b64": signature,
+    }).json()["level"] == "remote"
+    assert client.get("/api/data/remote").status_code == 200
+    second = client.post("/api/trust/start", json={}).json()
+    assert second["challenge_id"] != first["challenge_id"]
+    assert client.get("/api/data/remote").status_code == 403
+    assert client.get("/api/trust/challenge-by-code/" + code).status_code == 400
+    assert client.get("/api/trust/status").json()["challenge"]["approval_code"] == second["approval_code"]
 
 
 def test_operator_revocation_clears_office_access_and_pending_enrollment(client, monkeypatch):

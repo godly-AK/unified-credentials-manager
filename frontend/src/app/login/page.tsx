@@ -18,7 +18,7 @@ export default function Login() {
     try {
       const response = await api.post('/api/login', { username, password });
       if (response.data.success) {
-        router.push(response.data.data?.password_change_required ? '/services/security' : '/services');
+        router.push(response.data.data?.password_change_required ? '/services/security' : '/services/pipeline');
         router.refresh();
       }
       else setError(response.data.message);

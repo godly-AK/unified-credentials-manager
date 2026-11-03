@@ -34,7 +34,7 @@ def test_legacy_import_preserves_account_and_discards_old_tokens(tmp_path):
         row = db.execute("SELECT username,password_hash,emails FROM users").fetchone()
         assert row[0] == "original_user" and row[2] == "original@example.com"
         assert verify_password("VioletTelescopeRiver2026!", row[1]).valid
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "b7e942d0c531"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "c1d64a8f29b0"
         columns = {column[1] for column in db.execute("PRAGMA table_info(users)")}
         assert "token" not in columns and "fcm_token" not in columns
         assert db.execute("SELECT is_admin FROM users").fetchone()[0] == 0

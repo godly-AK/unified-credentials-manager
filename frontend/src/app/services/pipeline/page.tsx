@@ -1,15 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api, { getApiError } from '@/lib/api';
-import { grantWorkplacePhone, sendChallengeToGrantedPhones } from '@/lib/workplace-bluetooth';
+import { grantWorkplacePhone, restoreWorkplacePhones, sendChallengeToGrantedPhones } from '@/lib/workplace-bluetooth';
 
 type Node = { id: string; slot: 'A' | 'B'; label: string };
-type Challenge = { id: string; expires_at: string; phone: boolean; node_a: boolean; node_b: boolean };
-type Status = { level: 'password' | 'remote' | 'office'; phone_enrolled: boolean; office_trust_enabled: boolean; nodes: Node[]; challenge: Challenge | null };
+type Challenge = { id: string; approval_code: string | null; expires_at: string; phone: boolean; node_a: boolean; node_b: boolean };
+type Status = { username: string; level: 'password' | 'remote' | 'office'; phone_enrolled: boolean; office_trust_enabled: boolean; nodes: Node[]; challenge: Challenge | null };
 type BluetoothResult = { reached: number; granted: number; failures: string[] };
 
 function bluetoothSummary(result: BluetoothResult): string {
+  if (result.granted === 0) return 'No saved workplace tablets are available in this browser. Select node A and node B once, then retry.';
   const count = `${result.reached} of ${result.granted} Bluetooth requests sent`;
   return result.failures.length ? `${count}. ${result.failures.join(' | ')}` : `${count}. Check the node approvals below; their signed reports go directly to UCM.`;
 }
@@ -21,6 +22,9 @@ export default function PipelinePage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
   const [bluetoothMessage, setBluetoothMessage] = useState('');
+  const [pairingMessage, setPairingMessage] = useState('Checking saved Bluetooth permissions…');
+  const autoStarted = useRef(false);
+  const autoContacted = useRef('');
   const [slot, setSlot] = useState<'A' | 'B'>('A');
   const [label, setLabel] = useState('');
   const [ticket, setTicket] = useState('');
@@ -44,25 +48,59 @@ export default function PipelinePage() {
     return () => window.clearInterval(poll);
   }, [refresh]);
 
-  async function start() {
+  const start = useCallback(async () => {
     setBusy('start'); setError('');
     try {
-      const response = await api.post('/api/trust/start', {});
+      await api.post('/api/trust/start', {});
       await refresh();
-      if (status?.office_trust_enabled) {
-        const result = await sendChallengeToGrantedPhones(response.data.challenge_id);
-        setBluetoothMessage(bluetoothSummary(result));
-      }
+      setBluetoothMessage('Waiting for main-phone approval. The website will then contact the saved workplace tablets.');
     }
     catch (failure) { setError(getApiError(failure, 'Could not start approval.')); }
     finally { setBusy(''); }
-  }
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!status || autoStarted.current) return;
+    if (status.challenge) { autoStarted.current = true; return; }
+    if (status.phone_enrolled && status.level === 'password') {
+      autoStarted.current = true;
+      void start();
+    }
+  }, [status, start]);
+
+  useEffect(() => {
+    if (!status?.office_trust_enabled || !status.username) return;
+    void restoreWorkplacePhones(status.username).then(result => {
+      setPairingMessage(result.supported
+        ? `${result.count} of 2 previously permitted tablets restored for this account.`
+        : 'This browser cannot restore Bluetooth permissions after a reload. Select both tablets in this tab, or use a supported desktop browser.');
+    }).catch(() => setPairingMessage('Bluetooth is unavailable here. Use desktop Chrome or Edge.'));
+  }, [status?.office_trust_enabled, status?.username]);
+
+  useEffect(() => {
+    const challenge = status?.challenge;
+    if (!status?.office_trust_enabled || !challenge?.phone ||
+        (challenge.node_a && challenge.node_b) || autoContacted.current === challenge.id) return;
+    autoContacted.current = challenge.id;
+    setBluetoothMessage('Main phone approved. Contacting the previously permitted workplace tablets…');
+    void sendChallengeToGrantedPhones(challenge.id, status.username, setBluetoothMessage).then(result => {
+      setBluetoothMessage(bluetoothSummary(result));
+      void refresh();
+    }).catch(failure => setBluetoothMessage(failure instanceof Error ? failure.message : 'Could not contact workplace tablets.'));
+  }, [status?.challenge, status?.office_trust_enabled, status?.username, refresh]);
 
   async function grant(slot: 'A' | 'B') {
     setBusy('bluetooth'); setError('');
     try {
-      const count = await grantWorkplacePhone(slot);
-      setBluetoothMessage(`Node ${slot} selected. ${count} of 2 nodes ready in this tab. Keep the tab open; select both again if you reload it.`);
+      if (!status) return;
+      const count = await grantWorkplacePhone(slot, status.username);
+      setPairingMessage(`${count} of 2 tablets selected for this account.`);
+      if (count === 2 && status.challenge?.phone) {
+        setBluetoothMessage('Both tablets selected. Contacting them now…');
+        const result = await sendChallengeToGrantedPhones(status.challenge.id, status.username, setBluetoothMessage);
+        setBluetoothMessage(bluetoothSummary(result));
+        await refresh();
+      }
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not connect to the workplace phone.'); }
     finally { setBusy(''); }
   }
@@ -71,7 +109,7 @@ export default function PipelinePage() {
     if (!status?.challenge) return;
     setBusy('bluetooth'); setError('');
     try {
-      const result = await sendChallengeToGrantedPhones(status.challenge.id);
+      const result = await sendChallengeToGrantedPhones(status.challenge.id, status.username, setBluetoothMessage);
       setBluetoothMessage(bluetoothSummary(result));
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not contact workplace phones.'); }
     finally { setBusy(''); }
@@ -100,6 +138,15 @@ export default function PipelinePage() {
     { title: '3 · Workplace node A', complete: !!status?.challenge?.node_a, description: 'A registered workplace key signs this request.' },
     { title: '4 · Workplace node B', complete: !!status?.challenge?.node_b, description: 'A second, distinct workplace key signs this request.' },
   ];
+  const flowMessage = !status ? 'Checking your account…' : !status.phone_enrolled
+    ? 'Enroll the main phone to enable signed approval.' : status.level === 'office'
+      ? 'Office access is open. The Pixel and both workplace nodes signed this request.'
+      : !status.challenge ? 'The approval request is being prepared, or the previous one expired.'
+        : !status.challenge.phone ? 'Enter the 8-digit request code on the Pixel and approve with your biometric.'
+          : status.challenge.node_a && !status.challenge.node_b ? 'Remote access is open. Node A signed; waiting for node B.'
+            : status.challenge.node_b && !status.challenge.node_a ? 'Remote access is open. Node B signed; waiting for node A.'
+              : status.level === 'remote' ? 'Remote access is open. Checking the nearby workplace nodes for office access.'
+            : 'The main phone approved. Waiting for signed workplace node reports.';
 
   return <main>
     <div className="heading-row"><div><h1>Login pipeline</h1><p className="muted">See exactly which approvals have opened each level of access.</p></div>
@@ -110,10 +157,13 @@ export default function PipelinePage() {
         <p className="muted">Password → main phone → workplace node A + node B</p></div>
       <button className="btn" onClick={start} disabled={!!busy || !status?.phone_enrolled}>Start fresh approval</button>
     </section>
+    <section className="panel" style={{ marginTop: 18 }} aria-live="polite"><p className="eyebrow">LIVE LOGIN PROGRESS</p><h2>{flowMessage}</h2>
+      {bluetoothMessage && <p className="muted" style={{ marginTop: 10 }}>{bluetoothMessage}</p>}</section>
     {!status?.phone_enrolled && <p className="notice" style={{ marginTop: 18 }}>Enroll your main phone in the Android app before requesting an approval.</p>}
     {status && !status.office_trust_enabled && <p className="notice" style={{ marginTop: 18 }}>Office access is disabled until the Bluetooth witness flow has been tested with the computer and both workplace phones. Signed node responses alone do not prove local presence.</p>}
     {status?.office_trust_enabled && <section className="panel" style={{ marginTop: 18 }}><h2>Computer Bluetooth check</h2>
-      <p className="muted">Select the correct tablet for each node. Selecting again replaces the previous device for that slot.</p>
+      <p className="muted">Select each tablet once in this browser. Future requests contact saved devices automatically after main-phone approval.</p>
+      <p className="hint" role="status">{pairingMessage}</p>
       <div className="panel-actions"><button className="btn secondary" onClick={() => grant('A')} disabled={!!busy}>Select node A tablet</button>
         <button className="btn secondary" onClick={() => grant('B')} disabled={!!busy}>Select node B tablet</button>
         <button className="btn secondary" onClick={contact} disabled={!!busy || !status.challenge}>Contact both phones now</button></div>
@@ -124,8 +174,8 @@ export default function PipelinePage() {
         {checks.map(check => <div className="pipeline-step" key={check.title}><span className={'step-dot' + (check.complete ? ' done' : '')}>{check.complete ? '✓' : '·'}</span>
           <div><h3>{check.title}</h3><p className="muted">{check.description}</p></div><span className={'badge' + (check.complete ? '' : ' pending')}>{check.complete ? 'Complete' : 'Waiting'}</span></div>)}
       </div>
-      {status?.challenge && <div className="challenge-box"><p className="eyebrow">ACTIVE REQUEST</p><p>Enter this request ID in the main-phone app:</p>
-        <code>{status.challenge.id}</code><p className="hint">Expires {new Date(status.challenge.expires_at).toLocaleTimeString()}. A new request replaces the previous one.</p></div>}
+      {status?.challenge && <div className="challenge-box"><p className="eyebrow">ACTIVE REQUEST</p><p>Enter this request code in the main-phone app:</p>
+        <code className="request-code">{status.challenge.approval_code ?? status.challenge.id}</code><p className="hint">Expires {new Date(status.challenge.expires_at).toLocaleTimeString()}. A new request replaces the previous one.</p></div>}
       </section>
       <section className="panel"><h2>What you can access</h2><div className="data-tiers">
         <div><span className={'badge' + (status?.level === 'password' ? ' pending' : '')}>Remote</span><p>{remote || 'Checking…'}</p></div>
