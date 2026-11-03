@@ -30,7 +30,7 @@ UCM uses selected NIST SP 800-63B-4 password practices and OWASP ASVS 5 controls
 | Administrator monitoring | Backend and browser rehearsal verified | Operator-only role grant/revoke, web session plus recent main-phone approval, cross-account filtering and paged events, one-time high-risk review; production incident response still pending |
 | Signed reset without active login | Backend and emulator verified | RSA-PSS/SHA-256; message bound to nonce and new-password digest; old password rejected after emulator reset |
 | One-time, five-minute recovery challenge | Implemented | Conditional compare-and-delete consumption; expiry/replay tests |
-| Android device keys and biometric prompt | Emulator runtime verified; physical device pending | API 36.1 emulator completed signed login approval and password reset with a simulated fingerprint; API 35+ client |
+| Android device keys and biometric prompt | Emulator runtime verified; physical device pending | API 36.1 emulator completed signed login approval and password reset with a simulated fingerprint; main phone needs API 35+, workplace nodes can use API 34+ with P-256 ECDSA |
 | Same-site website integration | Implemented | Independent Lab Library sample with protected backend endpoint |
 | TLS 1.3 and traffic-analysis proof | Local deployment verified; public evidence pending | Local Caddy CA, TLS 1.3 handshake, TCP/443 capture and selected-port Nmap; ordinary demo runs HTTP |
 | Central Elasticsearch/Kibana event ingestion | Secured local stack runtime verified | Six synthetic PostgreSQL events reached Elasticsearch over authenticated TLS; restricted exporter key and Kibana login verified; dashboard imported; operational retention and public deployment pending |

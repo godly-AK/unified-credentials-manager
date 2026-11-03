@@ -25,7 +25,7 @@ The isolated [phone-lab launcher and acceptance record](PHONE_LAB.md) prepares o
 
 ## Security boundary and limits
 
-- The node private keys stay in Android Keystore. UCM stores public keys and validates RSA-PSS signatures. The website cannot invent node approvals.
+- The node private keys stay in Android Keystore. UCM validates RSA-PSS/SHA-256 signatures for Android 15+ nodes and P-256 ECDSA/SHA-256 signatures for Android 14 nodes. The Pixel main-phone approval remains RSA-PSS. The website cannot invent node approvals.
 - The backend checks that the three public keys differ. It cannot yet cryptographically prove that those keys were generated on three separate physical phones. Enroll the workplace phones under supervision; hardware-backed attestation is a future hardening step.
 - Changing or removing an enrolled main-phone key now requires both the current password and a recent signed main-phone approval for that session. This prevents a stolen password alone from swapping in an attacker's phone. Losing the phone requires the operator procedure below; self-service password-only recovery is deliberately unavailable.
 - Browser permission is granted through the browser's device picker once per node. Browser and device support for Web Bluetooth vary; reconnecting may fail when a phone is off, out of range, or its app is not active.

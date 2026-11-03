@@ -73,7 +73,7 @@ Back up any existing database before upgrading. A database that already matches 
 A known two- or four-table pre-Alembic database can be copied into a fresh migrated database with the [legacy importer](docs/MIGRATIONS.md). A four-table PostgreSQL lab copy has been rehearsed. Old session and push tokens are intentionally discarded.
 
 ## Native Android
-Open [android-native](android-native/README.md) in Android Studio. The client requires Android 15/API 35+ and a strong biometric, with SDK 36 for compilation. It uses the same reset-message format as the tested backend. The original Flutter client remains a reference.
+Open [android-native](android-native/README.md) in Android Studio. The main-phone role requires Android 15/API 35+ and a strong biometric. Workplace-node mode supports Android 14/API 34+ through a Keystore P-256 signing key; physical tablet testing remains. SDK 36 is used for compilation. The original Flutter client remains a reference.
 
 For the eventual three-phone test, use the [isolated HTTPS phone-lab runbook](docs/PHONE_LAB.md). The normal localhost demo and its database remain separate. For a self-hosted domain, see the [HTTPS deployment starting point](docs/DEPLOYMENT.md).
 

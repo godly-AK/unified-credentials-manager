@@ -94,7 +94,7 @@ The AES key must be supplied as a separate 32-byte environment-configured key ou
 A signature authenticates a message and detects modification using a private signing key and a public verifier. It does not hide message contents. TLS provides transport confidentiality; RSA-PSS approves the recovery change.
 
 ### 21. Why do the PSS details matter?
-The digest, MGF1 digest and salt length must match across Python and Android. UCM's profile is SHA-256, MGF1/SHA-256 and a 32-byte salt. The native API 35 requirement allows explicit Keystore MGF1 configuration; the signed flow passed on an API 36.1 emulator, while physical-device behavior still needs checking.
+For the Pixel main phone, the digest, MGF1 digest and salt length must match across Python and Android: SHA-256, MGF1/SHA-256 and a 32-byte salt. API 35 allows explicit Keystore MGF1 configuration. An Android 14 workplace node uses P-256 ECDSA/SHA-256 instead; the backend verifies that node profile separately. Main-phone signing passed on an API 36.1 emulator, while physical-device behavior still needs checking.
 
 ## Sessions and web security questions
 
@@ -154,8 +154,8 @@ Signing only the nonce would not bind approval to the proposed password. Includi
 ### 39. What if the phone is lost or the biometric enrollment changes?
 Remove the old public key from the account portal after password confirmation and enroll a replacement device. Biometric enrollment changes invalidate the local key. Losing both the password and phone needs a separate recovery lifecycle that is not yet implemented.
 
-### 40. Why does the native app require Android 15 or newer?
-Its Keystore configuration explicitly authorizes MGF1/SHA-256, available from API 35, to match the Python verifier. Older Android support would need a separately reviewed compatible signature profile and runtime tests.
+### 40. Why does the main phone require Android 15 while a workplace node can use Android 14?
+The main phone's biometric RSA-PSS key explicitly authorizes MGF1/SHA-256, available from API 35, to match the Python verifier. On Android 14, a workplace node instead uses a P-256 ECDSA/SHA-256 key in Android Keystore. The backend accepts that profile for node approvals only. The Android 14 path has API tests and compiles, but still needs the real tablet test.
 
 ## Evidence and remaining-work questions
 

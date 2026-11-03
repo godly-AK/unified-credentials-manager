@@ -113,7 +113,7 @@ The active mobile client is **Kotlin/Jetpack Compose opened in Android Studio**.
 
 ### Implemented Android capabilities
 
-- Android 15/API 35+ minimum; Android SDK 36 for compilation.
+- Android 15/API 35+ for the biometric main-phone role; Android 14/API 34+ for workplace nodes using P-256 ECDSA; Android SDK 36 for compilation.
 - Live backend API calls, timeouts, normal TLS certificate validation, and no redirect following.
 - Enrollment using username/current password and a temporary bearer session, which is then signed out.
 - An account-and-server-scoped RSA-2048 key generated in Android Keystore.

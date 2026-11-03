@@ -7,7 +7,7 @@ os.environ["DATABASE_URL_OVERRIDE"] = "sqlite://"
 import pytest
 from fastapi.testclient import TestClient
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from app.db.database import Base, engine, SessionLocal
 from app.db.models import AuthSession, ResetChallenge, SecurityEvent, LoginTrustChallenge, User, AuditExportCheckpoint, NodeEnrollmentTicket
 from app.core.limiter import limiter
@@ -409,7 +409,7 @@ def test_account_login_throttle_spans_web_and_android_and_expires(client):
 def test_tiered_access_requires_phone_and_two_distinct_nodes(client, monkeypatch):
     monkeypatch.setattr(settings, "office_trust_enabled", True)
     phone = enroll(client)
-    node_a = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    node_a = ec.generate_private_key(ec.SECP256R1())
     node_b = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
     def pem(key):
@@ -418,11 +418,18 @@ def test_tiered_access_requires_phone_and_two_distinct_nodes(client, monkeypatch
 
     def sign(key, role, challenge):
         value = f"UCM:login-trust:v1\n{role}\n{challenge['challenge_id']}\n{challenge['nonce']}".encode()
-        return base64.b64encode(key.sign(value, padding.PSS(mgf=padding.MGF1(hashes.SHA256()),
-                                                        salt_length=32), hashes.SHA256())).decode()
+        if isinstance(key, ec.EllipticCurvePrivateKey):
+            signature = key.sign(value, ec.ECDSA(hashes.SHA256()))
+        else:
+            signature = key.sign(value, padding.PSS(mgf=padding.MGF1(hashes.SHA256()),
+                                                    salt_length=32), hashes.SHA256())
+        return base64.b64encode(signature).decode()
 
     assert client.get("/api/data/remote").status_code == 403
     assert client.get("/api/data/office").status_code == 403
+    unsupported = ec.generate_private_key(ec.SECP384R1())
+    assert client.post("/api/trust/nodes", json={"slot": "A", "label": "Wrong curve",
+        "public_key_pem": pem(unsupported), "current_password": PASSWORD}).status_code == 400
     for slot, key in (("A", node_a), ("B", node_b)):
         result = client.post("/api/trust/nodes", json={"slot": slot, "label": "Desk " + slot,
                                                       "public_key_pem": pem(key), "current_password": PASSWORD})
@@ -443,6 +450,8 @@ def test_tiered_access_requires_phone_and_two_distinct_nodes(client, monkeypatch
     assert client.get("/api/data/office").status_code == 403
     assert client.post("/api/trust/phone-approve", json={"challenge_id": challenge_id,
                                                            "signature_b64": sign(phone, "phone", challenge)}).status_code == 409
+    assert client.post("/api/trust/node-approve", json={"challenge_id": challenge_id,
+        "node_id": nodes["A"], "signature_b64": sign(node_a, "node-B", challenge)}).status_code == 400
     for slot, key in (("A", node_a), ("B", node_b)):
         result = client.post("/api/trust/node-approve", json={"challenge_id": challenge_id,
             "node_id": nodes[slot], "signature_b64": sign(key, "node-" + slot, challenge)})
@@ -531,7 +540,7 @@ def test_node_enrollment_code_is_one_time_and_role_keys_are_distinct(client):
     same_key = client.post("/api/trust/nodes/claim", json={
         "ticket": ticket, "public_key_pem": phone_pem.replace("\n", "\r\n")})
     assert same_key.status_code == 409
-    node = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    node = ec.generate_private_key(ec.SECP256R1())
     node_pem = node.public_key().public_bytes(serialization.Encoding.PEM,
                                               serialization.PublicFormat.SubjectPublicKeyInfo).decode()
     claimed = client.post("/api/trust/nodes/claim", json={"ticket": ticket, "public_key_pem": node_pem})

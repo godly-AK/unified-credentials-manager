@@ -1,13 +1,13 @@
 # Three-device HTTPS lab rehearsal
 
-This is the final physical acceptance test for the proposed office access feature. It needs a laptop with Bluetooth and Chrome or Edge, one main Android phone, and two separate Android phones or tablets acting as workplace nodes. A Pixel can be the main phone and two Samsung tablets can be nodes if all three run Android 15/API 35 or newer and both tablets support Bluetooth LE advertising. No physical three-device result has been claimed yet.
+This is the final physical acceptance test for the proposed office access feature. It needs a laptop with Bluetooth and Chrome or Edge, one main Android phone, and two separate Android phones or tablets acting as workplace nodes. A Pixel can be the main phone if it runs Android 15/API 35 or newer with a strong biometric. Two Samsung tablets can be nodes on Android 14/API 34 or newer if both support Bluetooth LE advertising. No physical three-device result has been claimed yet.
 
 The temporary ngrok tunnel supplies one HTTPS address for the portal and API. UCM still performs registration, session checks, signature verification, and authorization on the local backend. The tunnel is a lab transport dependency, not an identity provider or part of the intended self-hosted deployment. ngrok terminates HTTPS at its edge and forwards traffic over an encrypted tunnel to the local agent; the final hop to the localhost portal is HTTP. Use synthetic lab accounts and do not call this a test of end-to-end TLS to UCM.
 
 ## Prepare
 
 1. Install ngrok using its [official Windows instructions](https://ngrok.com/download/windows) and add your account's authtoken. Choose the HTTPS dev domain assigned to your account. Keep that exact address for every enrollment and test.
-2. Install the backend and frontend dependencies from the [README](../README.md), and install the tested [Android debug APK](../output/UCM-lab-debug-2026-11-03.apk) on all three devices. Android 15/API 35 or newer and a strong enrolled biometric are required for the main phone. Each workplace tablet must support BLE advertising; the app will report when advertising is unavailable. This is a debug-signed lab APK, not a store or production release.
+2. Install the backend and frontend dependencies from the [README](../README.md), and install the current [Android debug APK](../output/UCM-lab-debug-android14-2026-11-03.apk) on all three devices. Android 15/API 35 or newer and a strong enrolled biometric are required for the Pixel main phone. Android 14/API 34 or newer is sufficient for a workplace tablet if it supports BLE advertising; the app will report when advertising is unavailable. This is a debug-signed lab APK, not a store or production release. The older `UCM-lab-debug-2026-11-03.apk` requires Android 15 and will not install on Android 14.
 3. Stop the normal SQLite demo with `scripts/Stop-Demo.ps1`. The phone lab uses ports 3000 and 8000 but a separate database and encryption key in ignored `.demo/phone-lab/`.
 4. From the repository root, replace the example URL below with your assigned HTTPS address:
 
@@ -60,4 +60,4 @@ The isolated lab database and encryption key remain for a repeat rehearsal. The 
 
 ## Current evidence and limit
 
-On November 3, 2026, the launcher was smoke-tested with a placeholder HTTPS origin **without starting ngrok or connecting phones**. A synthetic account registered and signed in through the portal's same-origin API rewrite; the backend returned a Secure, HttpOnly session cookie and its protected profile. That synthetic session was then revoked. This verifies local routing and HTTPS-origin configuration only. The physical result table above remains open until the three phones are available.
+On November 3, 2026, the launcher was first smoke-tested with a placeholder HTTPS origin. Later the live ngrok origin passed all 19 HTTP security checks with a synthetic account, including Secure and HttpOnly cookie handling, CSRF rejection, foreign-origin rejection, and logout. The new Android 14 compatible APK was served at `/downloads/ucm-android14.apk` with HTTP 200 and the expected size. This verifies the public routing and web/API controls; the physical result table above remains open until the three devices are tested.

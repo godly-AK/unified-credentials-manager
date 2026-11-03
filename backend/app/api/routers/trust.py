@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -70,11 +70,27 @@ def verify(public_key_pem: str, signature_b64: str, payload: bytes) -> None:
         raise HTTPException(status_code=400, detail="Approval signature is invalid.")
 
 
-def key_identity(public_key_pem: str) -> bytes:
+def verify_node(public_key_pem: str, signature_b64: str, payload: bytes) -> None:
+    try:
+        key = serialization.load_pem_public_key(public_key_pem.encode())
+        signature = base64.b64decode(signature_b64, validate=True)
+        if isinstance(key, rsa.RSAPublicKey) and 2048 <= key.key_size <= 4096:
+            key.verify(signature, payload, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32), hashes.SHA256())
+        elif isinstance(key, ec.EllipticCurvePublicKey) and isinstance(key.curve, ec.SECP256R1):
+            key.verify(signature, payload, ec.ECDSA(hashes.SHA256()))
+        else:
+            raise ValueError("Unsupported workplace key")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Approval signature is invalid.")
+
+
+def key_identity(public_key_pem: str, *, allow_ec: bool = False) -> bytes:
     """Compare the actual public key, regardless of PEM whitespace or encoding."""
     key = serialization.load_pem_public_key(public_key_pem.encode())
-    if not isinstance(key, rsa.RSAPublicKey) or not 2048 <= key.key_size <= 4096:
-        raise ValueError("Unsupported RSA key")
+    valid_rsa = isinstance(key, rsa.RSAPublicKey) and 2048 <= key.key_size <= 4096
+    valid_ec = allow_ec and isinstance(key, ec.EllipticCurvePublicKey) and isinstance(key.curve, ec.SECP256R1)
+    if not valid_rsa and not valid_ec:
+        raise ValueError("Unsupported public key")
     return key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
 
 
@@ -82,7 +98,7 @@ def key_already_enrolled(db: Session, username: str, candidate: bytes) -> bool:
     user = db.get(User, username)
     if user.public_key and key_identity(user.public_key) == candidate:
         return True
-    return any(key_identity(node.public_key) == candidate for node in db.query(WorkplaceNode).filter(
+    return any(key_identity(node.public_key, allow_ec=True) == candidate for node in db.query(WorkplaceNode).filter(
         WorkplaceNode.username == username, WorkplaceNode.revoked_at.is_(None)).all())
 
 
@@ -203,7 +219,7 @@ def node_approve(payload: SignedNodeApproval, request: Request, db: Session = De
     field = "node_a_approved_at" if node.slot == "A" else "node_b_approved_at"
     if getattr(challenge, field):
         raise HTTPException(status_code=409, detail="This node has already approved.")
-    verify(node.public_key, payload.signature_b64, message(challenge, "node-" + node.slot))
+    verify_node(node.public_key, payload.signature_b64, message(challenge, "node-" + node.slot))
     setattr(challenge, field, datetime.now(timezone.utc))
     return {"level": update_trust(db, challenge, request)}
 
@@ -216,9 +232,9 @@ def enroll_node(payload: NodeEnrollment, request: Request, session: AuthSession 
     if not verify_password(normalize_password(payload.current_password), user.password_hash).valid:
         raise HTTPException(status_code=403, detail="Current password is incorrect.")
     try:
-        identity = key_identity(payload.public_key_pem)
+        identity = key_identity(payload.public_key_pem, allow_ec=True)
     except Exception:
-        raise HTTPException(status_code=400, detail="Use an RSA public key between 2048 and 4096 bits.")
+        raise HTTPException(status_code=400, detail="Use an RSA 2048–4096 or P-256 workplace public key.")
     old = db.query(WorkplaceNode).filter(WorkplaceNode.username == session.username,
                                          WorkplaceNode.slot == payload.slot,
                                          WorkplaceNode.revoked_at.is_(None)).first()
@@ -265,9 +281,9 @@ def claim_node_ticket(payload: NodeTicketClaim, request: Request, db: Session = 
     if not ticket or utc(ticket.expires_at) <= datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Enrollment code is invalid or expired.")
     try:
-        identity = key_identity(payload.public_key_pem)
+        identity = key_identity(payload.public_key_pem, allow_ec=True)
     except Exception:
-        raise HTTPException(status_code=400, detail="Use an RSA public key between 2048 and 4096 bits.")
+        raise HTTPException(status_code=400, detail="Use an RSA 2048–4096 or P-256 workplace public key.")
     if key_already_enrolled(db, ticket.username, identity):
         raise HTTPException(status_code=409, detail="Each role needs a different device key.")
     old = db.query(WorkplaceNode).filter(WorkplaceNode.username == ticket.username,

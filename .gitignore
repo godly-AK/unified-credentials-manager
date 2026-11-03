@@ -11,3 +11,4 @@ coverage/
 .playwright-cli/
 backend/data/*.sqlite3
 /output/playwright/
+/frontend/public/downloads/*.apk
