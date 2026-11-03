@@ -4,20 +4,22 @@ const REQUEST_UUID = 'b15a0a01-571d-4a73-95de-6d660c00b001';
 type Characteristic = {
   writeValueWithResponse(value: BufferSource): Promise<void>;
 };
+type GattServer = { getPrimaryService(uuid: string): Promise<{
+  getCharacteristic(uuid: string): Promise<Characteristic>;
+}> };
 type Device = {
   id: string;
   name?: string;
-  gatt?: { connect(): Promise<{ getPrimaryService(uuid: string): Promise<{
-    getCharacteristic(uuid: string): Promise<Characteristic>;
-  }> }> };
+  gatt?: { connect(): Promise<GattServer>; disconnect?(): void };
 };
+type NodeSlot = 'A' | 'B';
 type BrowserBluetooth = {
   requestDevice(options: { filters: Array<{ services: string[] }> }): Promise<Device>;
 };
 
 // Use only devices selected for this test. A browser's older Bluetooth grants
 // may refer to tablets that are no longer present or have been re-enrolled.
-const selectedDevices = new Map<string, Device>();
+const selectedDevices = new Map<NodeSlot, Device>();
 
 function bluetooth(): BrowserBluetooth {
   const available = (navigator as Navigator & { bluetooth?: BrowserBluetooth }).bluetooth;
@@ -25,11 +27,26 @@ function bluetooth(): BrowserBluetooth {
   return available;
 }
 
-export async function grantWorkplacePhone(): Promise<number> {
+export async function grantWorkplacePhone(slot: NodeSlot): Promise<number> {
   const api = bluetooth();
   const device = await api.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
-  selectedDevices.set(device.id, device);
+  const otherSlot: NodeSlot = slot === 'A' ? 'B' : 'A';
+  if (selectedDevices.get(otherSlot)?.id === device.id) {
+    throw new Error(`This tablet is already selected for node ${otherSlot}. Choose the other tablet for node ${slot}.`);
+  }
+  selectedDevices.set(slot, device);
   return selectedDevices.size;
+}
+
+async function connectWithRetry(device: Device): Promise<GattServer> {
+  if (!device.gatt) throw new Error('Bluetooth connection is unavailable');
+  try {
+    return await device.gatt.connect();
+  } catch {
+    device.gatt.disconnect?.();
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return device.gatt.connect();
+  }
 }
 
 function uuidBytes(value: string): Uint8Array {
@@ -39,21 +56,26 @@ function uuidBytes(value: string): Uint8Array {
 }
 
 export async function sendChallengeToGrantedPhones(challengeId: string): Promise<{ reached: number; granted: number; failures: string[] }> {
-  const devices = [...selectedDevices.values()];
+  const devices = [...selectedDevices.entries()];
   let reached = 0;
   const failures: string[] = [];
-  for (const [index, device] of devices.entries()) {
+  for (const [slot, device] of devices) {
+    let phase = 'connect';
     try {
-      const server = await device.gatt?.connect();
-      if (!server) throw new Error('Bluetooth connection is unavailable');
+      const server = await connectWithRetry(device);
+      phase = 'find service';
       const service = await server.getPrimaryService(SERVICE_UUID);
+      phase = 'find request channel';
       const characteristic = await service.getCharacteristic(REQUEST_UUID);
       const bytes = uuidBytes(challengeId);
+      phase = 'send request';
       await characteristic.writeValueWithResponse(bytes.buffer.slice(0) as ArrayBuffer);
       reached += 1;
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Bluetooth connection failed';
-      failures.push(`Phone ${index + 1}${device.name ? ` (${device.name})` : ''}: ${reason}`);
+      failures.push(`Node ${slot}${device.name ? ` (${device.name})` : ''}, ${phase}: ${reason}`);
+    } finally {
+      device.gatt?.disconnect?.();
     }
   }
   return { reached, granted: devices.length, failures };

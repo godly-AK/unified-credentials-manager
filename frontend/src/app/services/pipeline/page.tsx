@@ -58,11 +58,11 @@ export default function PipelinePage() {
     finally { setBusy(''); }
   }
 
-  async function grant() {
+  async function grant(slot: 'A' | 'B') {
     setBusy('bluetooth'); setError('');
     try {
-      const count = await grantWorkplacePhone();
-      setBluetoothMessage(`${count} workplace phone${count === 1 ? '' : 's'} ready in this tab. Keep this tab open; grant both phones again if you reload it.`);
+      const count = await grantWorkplacePhone(slot);
+      setBluetoothMessage(`Node ${slot} selected. ${count} of 2 nodes ready in this tab. Keep the tab open; select both again if you reload it.`);
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not connect to the workplace phone.'); }
     finally { setBusy(''); }
   }
@@ -113,8 +113,9 @@ export default function PipelinePage() {
     {!status?.phone_enrolled && <p className="notice" style={{ marginTop: 18 }}>Enroll your main phone in the Android app before requesting an approval.</p>}
     {status && !status.office_trust_enabled && <p className="notice" style={{ marginTop: 18 }}>Office access is disabled until the Bluetooth witness flow has been tested with the computer and both workplace phones. Signed node responses alone do not prove local presence.</p>}
     {status?.office_trust_enabled && <section className="panel" style={{ marginTop: 18 }}><h2>Computer Bluetooth check</h2>
-      <p className="muted">Grant each workplace phone in this tab. Later requests in the same tab reconnect to those two phones.</p>
-      <div className="panel-actions"><button className="btn secondary" onClick={grant} disabled={!!busy}>Grant a workplace phone</button>
+      <p className="muted">Select the correct tablet for each node. Selecting again replaces the previous device for that slot.</p>
+      <div className="panel-actions"><button className="btn secondary" onClick={() => grant('A')} disabled={!!busy}>Select node A tablet</button>
+        <button className="btn secondary" onClick={() => grant('B')} disabled={!!busy}>Select node B tablet</button>
         <button className="btn secondary" onClick={contact} disabled={!!busy || !status.challenge}>Contact both phones now</button></div>
       {bluetoothMessage && <p className="notice" role="status" style={{ marginTop: 15 }}>{bluetoothMessage}</p>}
     </section>}
