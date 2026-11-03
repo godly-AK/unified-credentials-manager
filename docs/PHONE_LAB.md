@@ -1,13 +1,13 @@
-# Three-phone HTTPS lab rehearsal
+# Three-device HTTPS lab rehearsal
 
-This is the final physical acceptance test for the proposed office access feature. It needs a laptop with Bluetooth and Chrome or Edge, one main Android phone, and two separate Android phones acting as workplace nodes. No physical three-phone result has been claimed yet.
+This is the final physical acceptance test for the proposed office access feature. It needs a laptop with Bluetooth and Chrome or Edge, one main Android phone, and two separate Android phones or tablets acting as workplace nodes. A Pixel can be the main phone and two Samsung tablets can be nodes if all three run Android 15/API 35 or newer and both tablets support Bluetooth LE advertising. No physical three-device result has been claimed yet.
 
 The temporary ngrok tunnel supplies one HTTPS address for the portal and API. UCM still performs registration, session checks, signature verification, and authorization on the local backend. The tunnel is a lab transport dependency, not an identity provider or part of the intended self-hosted deployment. ngrok terminates HTTPS at its edge and forwards traffic over an encrypted tunnel to the local agent; the final hop to the localhost portal is HTTP. Use synthetic lab accounts and do not call this a test of end-to-end TLS to UCM.
 
 ## Prepare
 
 1. Install ngrok using its [official Windows instructions](https://ngrok.com/download/windows) and add your account's authtoken. Choose the HTTPS dev domain assigned to your account. Keep that exact address for every enrollment and test.
-2. Install the backend and frontend dependencies from the [README](../README.md), and install the tested [Android debug APK](../output/UCM-lab-debug-2026-11-03.apk) on all three phones. Android 15/API 35 or newer and a strong enrolled biometric are required for the main phone. Each workplace phone must support BLE advertising. This is a debug-signed lab APK, not a store or production release.
+2. Install the backend and frontend dependencies from the [README](../README.md), and install the tested [Android debug APK](../output/UCM-lab-debug-2026-11-03.apk) on all three devices. Android 15/API 35 or newer and a strong enrolled biometric are required for the main phone. Each workplace tablet must support BLE advertising; the app will report when advertising is unavailable. This is a debug-signed lab APK, not a store or production release.
 3. Stop the normal SQLite demo with `scripts/Stop-Demo.ps1`. The phone lab uses ports 3000 and 8000 but a separate database and encryption key in ignored `.demo/phone-lab/`.
 4. From the repository root, replace the example URL below with your assigned HTTPS address:
 
@@ -36,12 +36,14 @@ Use a fresh synthetic account. Keep the two workplace phones apart from the main
 | Enroll node A and node B using separate one-time codes | Both slots appear with different node IDs | To record |
 | Start BLE witness mode on both nodes and grant each browser permission | Browser sees both saved devices | To record |
 | Start a new request and contact both nodes near the laptop | Both nodes report signed approvals; office data opens | To record |
-| Switch off node B, start another request, and contact devices | New request cannot reach office level | To record |
-| Restore node B; retry with a fresh request | Office level opens again | To record |
+| After an office grant, sign out and sign back in (or wait for its ten-minute expiry); switch off node B, start another request, and contact devices | Pixel approval and node A can open remote access, but the fresh session cannot reach office level | To record |
+| Restore node B; start a fresh request and obtain Pixel plus both tablet approvals | Office level opens again | To record |
 | Revoke node B through the website or operator command | Existing office grant ends immediately; a new request cannot use B | To record |
 | Try a replayed or expired request | Rejected by the backend | To record |
 
 Record the three Android versions, browser version, the approximate phone-to-laptop distances, request IDs, screenshots of status and denial, and corresponding audit events. Do not include passwords, session cookies, CSRF tokens, private keys, or one-time enrollment codes in screenshots. A stopped node prevents a **new** grant; an already issued grant lasts up to ten minutes unless that node is revoked. Bluetooth presence is not an exact indoor location and does not rule out a live relay attack.
+
+For the first Bluetooth permission grant, keep only tablet A advertising, click **Grant a workplace phone** in the browser, and select A. Then start advertising on tablet B, click the button again, and select B. Both tablets should then remain on the app's **Node** screen with Bluetooth enabled. On the first **Start Bluetooth witness** press, Android may ask for Nearby devices permission and the app may ask you to press Start again. A fresh website approval automatically tries previously permitted tablets; use **Contact both phones now** if a tablet was missed. Keep the main-phone password reset until the end because it revokes all web sessions.
 
 For operator emergency response, use the [node inventory and revocation commands](TRUST_LEVELS.md#operator-response-to-a-lost-workplace-node) against the phone-lab database. Verify the reported loss before revocation. On this laptop, the phone-lab database path is `.demo/phone-lab/ucm.sqlite3`; set `DATABASE_URL_OVERRIDE` to its absolute `sqlite:///` URL before running an operator command from `backend/`.
 
