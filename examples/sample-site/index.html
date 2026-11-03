@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lab Library | UCM integration example</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#eef3fa;color:#182b4a;font:16px/1.65 system-ui,sans-serif}main{max-width:780px;margin:70px auto;padding:35px}h1{font-size:46px;line-height:1.15;letter-spacing:-2px}p{max-width:60ch}section{margin-top:30px;padding:28px;background:white;border:1px solid #dce4ef;border-radius:12px}button,a{font:inherit;border-radius:7px;padding:11px 17px;display:inline-block}button{border:0;background:#315de5;color:white;cursor:pointer}a{color:#315de5}button:focus-visible,a:focus-visible{outline:3px solid #6385f5;outline-offset:3px}.muted{color:#62718a}#identity{font-weight:650}.tiers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:20px}.tier{padding:16px;border:1px solid #dce4ef;border-radius:9px;background:#f8faff}.tier strong{display:block}.tier p{margin-bottom:0;overflow-wrap:anywhere}footer{margin-top:30px;font-size:13px;color:#62718a}@media(max-width:600px){main{margin:15px auto;padding:25px}h1{font-size:35px}.tiers{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <p class="muted">Lab Library</p>
+  <h1>A separate website.<br>The same UCM account.</h1>
+  <p>This sample site delegates authentication to UCM. It contains no password database or password-checking code.</p>
+  <section aria-label="Account access">
+    <p id="identity" role="status">Check your sign-in and approval level to open lab notes.</p>
+    <a href="http://localhost:3000/login" target="_blank" rel="noopener">Open UCM sign-in</a>
+    <a href="http://localhost:3000/services/pipeline" target="_blank" rel="noopener">Open login pipeline</a>
+    <button id="check" type="button">Check access</button>
+    <div class="tiers">
+      <div class="tier"><strong>Account</strong><p id="account-resource" class="muted">Checking required</p></div>
+      <div class="tier"><strong>Remote</strong><p id="remote-resource" class="muted">Checking required</p></div>
+      <div class="tier"><strong>Office</strong><p id="office-resource" class="muted">Checking required</p></div>
+    </div>
+  </section>
+  <footer>Local integration example. Run on localhost:3100 with UCM on localhost:3000 and its API on localhost:8000.</footer>
+</main>
+<script>
+  const status = document.getElementById('identity');
+  const resources = [
+    ['account-resource', '/api/example/private', 'Sign in required'],
+    ['remote-resource', '/api/data/remote', 'Main-phone approval required'],
+    ['office-resource', '/api/data/office', 'Two workplace nodes required'],
+  ];
+  document.getElementById('check').addEventListener('click', async () => {
+    status.textContent = 'Checking your UCM account…';
+    try {
+      const results = await Promise.all(resources.map(async ([id, path, locked]) => {
+        const response = await fetch('http://localhost:8000' + path, { credentials: 'include' });
+        const body = await response.json();
+        document.getElementById(id).textContent = response.ok ? body.content : locked;
+        return response.ok;
+      }));
+      status.textContent = results[0] ? 'Signed in. UCM checked each resource separately.' : 'Sign in to UCM, then check access again.';
+    } catch { status.textContent = 'Cannot reach UCM. Start the backend and try again.'; }
+  });
+</script>
+</body>
+</html>

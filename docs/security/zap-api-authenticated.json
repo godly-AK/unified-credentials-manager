@@ -1,0 +1,82 @@
+{
+  "@programName": "ZAP",
+  "@version": "2.17.0",
+  "@generated": "Tue, 3 Nov 2026 12:08:44",
+  "created": "2026-11-03T12:08:44.527487404Z",
+  "insights": [
+    {
+      "level": "Low",
+      "reason": "Warning",
+      "site": "",
+      "key": "insight.log.error",
+      "description": "ZAP errors logged - see the zap.log file for details",
+      "statistic": "1"
+    },
+    {
+      "level": "Low",
+      "reason": "Warning",
+      "site": "",
+      "key": "insight.log.warn",
+      "description": "ZAP warnings logged - see the zap.log file for details",
+      "statistic": "2"
+    },
+    {
+      "level": "Info",
+      "reason": "Informational",
+      "site": "http://host.docker.internal:8000",
+      "key": "insight.code.2xx",
+      "description": "Percentage of responses with status code 2xx",
+      "statistic": "50"
+    },
+    {
+      "level": "Info",
+      "reason": "Informational",
+      "site": "http://host.docker.internal:8000",
+      "key": "insight.code.4xx",
+      "description": "Percentage of responses with status code 4xx",
+      "statistic": "50"
+    },
+    {
+      "level": "Info",
+      "reason": "Informational",
+      "site": "http://host.docker.internal:8000",
+      "key": "insight.endpoint.ctype.application/json",
+      "description": "Percentage of endpoints with content type application/json",
+      "statistic": "100"
+    },
+    {
+      "level": "Info",
+      "reason": "Informational",
+      "site": "http://host.docker.internal:8000",
+      "key": "insight.endpoint.method.GET",
+      "description": "Percentage of endpoints with method GET",
+      "statistic": "80"
+    },
+    {
+      "level": "Info",
+      "reason": "Informational",
+      "site": "http://host.docker.internal:8000",
+      "key": "insight.endpoint.method.POST",
+      "description": "Percentage of endpoints with method POST",
+      "statistic": "20"
+    },
+    {
+      "level": "Info",
+      "reason": "Informational",
+      "site": "http://host.docker.internal:8000",
+      "key": "insight.endpoint.total",
+      "description": "Count of total endpoints",
+      "statistic": "10"
+    }
+  ],
+  "site": [
+    {
+      "@name": "http://host.docker.internal:8000",
+      "@host": "host.docker.internal",
+      "@port": "8000",
+      "@ssl": "false",
+      "alerts": []
+    }
+  ],
+  "sequences": []
+}

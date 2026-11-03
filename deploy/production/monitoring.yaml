@@ -1,0 +1,120 @@
+# Optional monitoring services. Combine with compose.yaml using both -f flags.
+services:
+  elastic-certs:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    user: "0"
+    volumes:
+      - elastic_certs:/usr/share/elasticsearch/config/certs
+      - elastic_ca_private:/etc/ucm/ca-private
+      - ./elastic-setup.sh:/usr/local/bin/ucm-elastic-setup.sh:ro
+    command: ["bash", "/usr/local/bin/ucm-elastic-setup.sh", "certs"]
+
+  elastic-setup:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    user: "0"
+    environment:
+      UCM_ELASTIC_PASSWORD: ${UCM_ELASTIC_PASSWORD:?Set UCM_ELASTIC_PASSWORD}
+      UCM_KIBANA_PASSWORD: ${UCM_KIBANA_PASSWORD:?Set UCM_KIBANA_PASSWORD}
+    volumes:
+      - elastic_certs:/usr/share/elasticsearch/config/certs:ro
+      - elastic_secrets:/etc/ucm/monitor-secrets
+      - ./elastic-setup.sh:/usr/local/bin/ucm-elastic-setup.sh:ro
+    command: ["bash", "/usr/local/bin/ucm-elastic-setup.sh", "password"]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      ELASTIC_PASSWORD: ${UCM_ELASTIC_PASSWORD:?Set UCM_ELASTIC_PASSWORD}
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "true"
+      xpack.security.http.ssl.key: certs/elasticsearch/elasticsearch.key
+      xpack.security.http.ssl.certificate: certs/elasticsearch/elasticsearch.crt
+      xpack.security.http.ssl.certificate_authorities: certs/ca/ca.crt
+      xpack.security.transport.ssl.enabled: "true"
+      xpack.security.transport.ssl.key: certs/elasticsearch/elasticsearch.key
+      xpack.security.transport.ssl.certificate: certs/elasticsearch/elasticsearch.crt
+      xpack.security.transport.ssl.certificate_authorities: certs/ca/ca.crt
+      xpack.security.transport.ssl.verification_mode: certificate
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - elastic_certs:/usr/share/elasticsearch/config/certs:ro
+      - elastic_data:/usr/share/elasticsearch/data
+    depends_on:
+      elastic-certs:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --cacert config/certs/ca/ca.crt -u elastic:$$ELASTIC_PASSWORD https://localhost:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: https://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${UCM_KIBANA_PASSWORD:?Set UCM_KIBANA_PASSWORD}
+      ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES: /usr/share/kibana/config/certs/ca/ca.crt
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: ${UCM_KIBANA_SAVED_OBJECTS_KEY:?Set UCM_KIBANA_SAVED_OBJECTS_KEY}
+      XPACK_SECURITY_ENCRYPTIONKEY: ${UCM_KIBANA_SECURITY_KEY:?Set UCM_KIBANA_SECURITY_KEY}
+      XPACK_REPORTING_ENCRYPTIONKEY: ${UCM_KIBANA_REPORTING_KEY:?Set UCM_KIBANA_REPORTING_KEY}
+    ports:
+      - "127.0.0.1:5601:5601"
+    volumes:
+      - type: volume
+        source: elastic_certs
+        target: /usr/share/kibana/config/certs/ca
+        read_only: true
+        volume:
+          subpath: ca
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      elastic-setup:
+        condition: service_completed_successfully
+
+  audit-exporter:
+    build:
+      context: ../../backend
+    command: ["python", "-m", "app.services.audit_exporter"]
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DB_NAME: ucm
+      DB_USER: ucm
+      DB_PASSWORD: ${UCM_DB_PASSWORD:?Set UCM_DB_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DATA_ENCRYPTION_KEY: ${UCM_DATA_ENCRYPTION_KEY:?Set UCM_DATA_ENCRYPTION_KEY}
+      SESSION_COOKIE_SECURE: "true"
+      CORS_ALLOW_ORIGINS: https://${UCM_DOMAIN:?Set UCM_DOMAIN}
+      ELASTICSEARCH_URL: https://elasticsearch:9200
+      ELASTICSEARCH_API_KEY_FILE: /etc/ucm/monitor-secrets/exporter-api-key
+      ELASTICSEARCH_CA_CERT: /etc/ucm/elastic-certs/ca/ca.crt
+    volumes:
+      - type: volume
+        source: elastic_certs
+        target: /etc/ucm/elastic-certs/ca
+        read_only: true
+        volume:
+          subpath: ca
+      - elastic_secrets:/etc/ucm/monitor-secrets:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      elastic-setup:
+        condition: service_completed_successfully
+
+volumes:
+  elastic_certs:
+  elastic_data:
+  elastic_secrets:
+  elastic_ca_private:

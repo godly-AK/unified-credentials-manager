@@ -1,0 +1,32 @@
+env:
+  contexts:
+    - name: ucm-portal
+      urls:
+        - http://frontend:3000
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+    maxDuration: 300
+jobs:
+  - type: spider
+    parameters:
+      context: ucm-portal
+      maxDuration: 1
+      postForm: false
+      processForm: false
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 3
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: /zap/wrk
+      reportFile: zap-portal.json
+      reportTitle: UCM local portal passive scan
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk
+      reportFile: zap-portal.html
+      reportTitle: UCM local portal passive scan

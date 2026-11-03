@@ -1,28 +1,48 @@
+from dataclasses import dataclass
+
 import bcrypt
-import time
-from jose import jwt
-from app.core.config import settings
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from argon2.low_level import Type
+
+
+
+# OWASP's current minimum Argon2id profile. These values are encoded into every
+# hash, which lets the application transparently increase the work factor later.
+password_hasher = PasswordHasher(
+    time_cost=2,
+    memory_cost=19 * 1024,
+    parallelism=1,
+    hash_len=32,
+    salt_len=16,
+    type=Type.ID,
+)
+
+
+@dataclass(frozen=True)
+class PasswordVerification:
+    valid: bool
+    needs_rehash: bool = False
+
 
 def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return password_hasher.hash(plain)
 
-def verify_password(plain: str, hashed: str) -> bool:
+
+def verify_password(plain: str, hashed: str) -> PasswordVerification:
+    """Verify Argon2id hashes and support migration from legacy bcrypt hashes."""
+    if hashed.startswith("$2"):
+        try:
+            valid = bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+            return PasswordVerification(valid=valid, needs_rehash=valid)
+        except ValueError:
+            return PasswordVerification(valid=False)
+
     try:
-        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
-    except ValueError:
-        return False
-
-def create_jwt(username: str) -> str:
-    now = int(time.time())
-    payload = {
-        "sub": username,
-        "iat": now,
-        "exp": now + settings.jwt_expires_seconds
-    }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-
-def decode_jwt(token: str) -> dict | None:
-    try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-    except Exception:
-        return None
+        valid = password_hasher.verify(hashed, plain)
+        return PasswordVerification(
+            valid=valid,
+            needs_rehash=valid and password_hasher.check_needs_rehash(hashed),
+        )
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return PasswordVerification(valid=False)

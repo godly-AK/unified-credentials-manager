@@ -21,7 +21,7 @@ def reset_demo_user(db):
     user = User(
         username=DEMO_USER,
         password_hash=PasswordCrypto.hash_password(DEMO_PASSWORD).decode("utf-8"),
-        emails=DEMO_EMAIL,
+        email=DEMO_EMAIL,
         last_access_time=datetime.now(timezone.utc),
         last_ip_addr=BASELINE_IP,
         blocked=False,

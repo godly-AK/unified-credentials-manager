@@ -1,0 +1,61 @@
+# Three-phone HTTPS lab rehearsal
+
+This is the final physical acceptance test for the proposed office access feature. It needs a laptop with Bluetooth and Chrome or Edge, one main Android phone, and two separate Android phones acting as workplace nodes. No physical three-phone result has been claimed yet.
+
+The temporary ngrok tunnel supplies one HTTPS address for the portal and API. UCM still performs registration, session checks, signature verification, and authorization on the local backend. The tunnel is a lab transport dependency, not an identity provider or part of the intended self-hosted deployment. ngrok terminates HTTPS at its edge and forwards traffic over an encrypted tunnel to the local agent; the final hop to the localhost portal is HTTP. Use synthetic lab accounts and do not call this a test of end-to-end TLS to UCM.
+
+## Prepare
+
+1. Install ngrok using its [official Windows instructions](https://ngrok.com/download/windows) and add your account's authtoken. Choose the HTTPS dev domain assigned to your account. Keep that exact address for every enrollment and test.
+2. Install the backend and frontend dependencies from the [README](../README.md), and install the tested [Android debug APK](../output/UCM-lab-debug-2026-11-03.apk) on all three phones. Android 15/API 35 or newer and a strong enrolled biometric are required for the main phone. Each workplace phone must support BLE advertising. This is a debug-signed lab APK, not a store or production release.
+3. Stop the normal SQLite demo with `scripts/Stop-Demo.ps1`. The phone lab uses ports 3000 and 8000 but a separate database and encryption key in ignored `.demo/phone-lab/`.
+4. From the repository root, replace the example URL below with your assigned HTTPS address:
+
+```powershell
+.\scripts\Start-Phone-Lab.ps1 -PublicUrl 'https://YOUR-DOMAIN.ngrok-free.app'
+```
+
+The launcher builds the portal for same-origin `/api` requests, migrates the isolated database, enables secure cookies and the office feature in this lab only, and binds both local servers to `127.0.0.1`. It rejects a non-HTTPS address. In a second terminal, start the matching tunnel:
+
+```powershell
+ngrok http 3000 --url https://YOUR-DOMAIN.ngrok-free.app
+```
+
+Open the **HTTPS** address on the laptop. Enter this same HTTPS address as the server in all three Android apps. Do not use `localhost`, `10.0.2.2`, or a different tunnel name on the phones: Android keys are scoped to the entered server address and account. If ngrok assigns a different URL, stop the phone lab and restart it with that exact URL before enrolling devices.
+
+The portal and API share the tunnel origin, so the browser can use an HttpOnly, Secure, SameSite=Lax session cookie without cross-site cookie workarounds. The backend accepts writes only from the configured HTTPS origin. The sample site at localhost:3100 is not part of this phone rehearsal.
+
+## Demonstrate and record
+
+Use a fresh synthetic account. Keep the two workplace phones apart from the main phone during enrollment so each role has a separate physical key.
+
+| Step | Expected result | Actual result / evidence |
+|---|---|---|
+| Register and sign in on the HTTPS portal | Password session opens; remote and office data stay locked | To record |
+| Enroll main phone; start a fresh request; approve with biometric | Remote opens; office stays locked | To record |
+| Enroll node A and node B using separate one-time codes | Both slots appear with different node IDs | To record |
+| Start BLE witness mode on both nodes and grant each browser permission | Browser sees both saved devices | To record |
+| Start a new request and contact both nodes near the laptop | Both nodes report signed approvals; office data opens | To record |
+| Switch off node B, start another request, and contact devices | New request cannot reach office level | To record |
+| Restore node B; retry with a fresh request | Office level opens again | To record |
+| Revoke node B through the website or operator command | Existing office grant ends immediately; a new request cannot use B | To record |
+| Try a replayed or expired request | Rejected by the backend | To record |
+
+Record the three Android versions, browser version, the approximate phone-to-laptop distances, request IDs, screenshots of status and denial, and corresponding audit events. Do not include passwords, session cookies, CSRF tokens, private keys, or one-time enrollment codes in screenshots. A stopped node prevents a **new** grant; an already issued grant lasts up to ten minutes unless that node is revoked. Bluetooth presence is not an exact indoor location and does not rule out a live relay attack.
+
+For operator emergency response, use the [node inventory and revocation commands](TRUST_LEVELS.md#operator-response-to-a-lost-workplace-node) against the phone-lab database. Verify the reported loss before revocation. On this laptop, the phone-lab database path is `.demo/phone-lab/ucm.sqlite3`; set `DATABASE_URL_OVERRIDE` to its absolute `sqlite:///` URL before running an operator command from `backend/`.
+
+## Finish
+
+Stop the tunnel in its terminal and run:
+
+```powershell
+.\scripts\Stop-Phone-Lab.ps1
+.\scripts\Start-Demo.ps1
+```
+
+The isolated lab database and encryption key remain for a repeat rehearsal. The ordinary web demo returns to localhost ports 3000/8000/3100. Do not publish the phone-lab key or database; both are under ignored `.demo/`.
+
+## Current evidence and limit
+
+On November 3, 2026, the launcher was smoke-tested with a placeholder HTTPS origin **without starting ngrok or connecting phones**. A synthetic account registered and signed in through the portal's same-origin API rewrite; the backend returned a Secure, HttpOnly session cookie and its protected profile. That synthetic session was then revoked. This verifies local routing and HTTPS-origin configuration only. The physical result table above remains open until the three phones are available.

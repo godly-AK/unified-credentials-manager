@@ -1,37 +1,22 @@
-// Components/Navbar.tsx
+'use client';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { KeyRound } from 'lucide-react';
 
-const Navbar = () => {
+export default function Navbar() {
+  const pathname = usePathname() ?? '';
   return (
-    <nav className="bg-gray-950 p-4 fixed top-0 w-full z-50">
-      <div className="container mx-auto flex justify-between items-center">
-        {/* Brand */}
-        <div className="text-white font-bold text-xl">Net Knights</div>
-
-        {/* Navigation Links */}
-        <div className="flex space-x-4">
-          <Link
-            href="/services"
-            className="text-white px-4 py-2 hover:text-cyan-300 transition-colors"
-          >
-            Services
-          </Link>
-          <Link
-            href="/services/attack-monitor"
-            className="text-white px-4 py-2 hover:text-cyan-300 transition-colors"
-          >
-            Attack Monitor
-          </Link>
-          <Link
-            href="/about"
-            className="text-white px-4 py-2 hover:text-cyan-300 transition-colors"
-          >
-            About Us
-          </Link>
-        </div>
-      </div>
-    </nav>
+    <header className="site-header">
+      <Link className="brand" href="/" aria-label="UCM home">
+        <span className="brand-mark"><KeyRound size={19} strokeWidth={2} /></span>
+        UCM <span className="brand-caption">Unified Credentials Manager</span>
+      </Link>
+      <nav className="nav-links" aria-label="Main navigation">
+        <Link className="nav-project" href="/about" aria-current={pathname === '/about' ? 'page' : undefined}>The project</Link>
+        <Link href="/services" aria-current={pathname.startsWith('/services') ? 'page' : undefined}>My account</Link>
+        <Link href="/services/pipeline" aria-current={pathname === '/services/pipeline' ? 'page' : undefined}>Login pipeline</Link>
+        {!pathname.startsWith('/services') && <Link href="/login" aria-current={pathname === '/login' ? 'page' : undefined}>Sign in</Link>}
+      </nav>
+    </header>
   );
-};
-
-export default Navbar;
+}

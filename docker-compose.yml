@@ -1,0 +1,109 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${UCM_DB_NAME:-ucm}
+      POSTGRES_USER: ucm
+      POSTGRES_PASSWORD: ucm-local-development
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ucm -d ucm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${UCM_BIND_HOST:-127.0.0.1}:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    ports:
+      - "${UCM_BIND_HOST:-127.0.0.1}:9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - "${UCM_BIND_HOST:-127.0.0.1}:5601:5601"
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: development
+      DB_NAME: ${UCM_DB_NAME:-ucm}
+      DB_USER: ucm
+      DB_PASSWORD: ucm-local-development
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      SESSION_TTL_SECONDS: "1800"
+      SESSION_COOKIE_NAME: ${UCM_SESSION_COOKIE_NAME:-ucm_session}
+      CORS_ALLOW_ORIGINS: ${UCM_CORS_ALLOW_ORIGINS:-http://localhost:3000,http://localhost:3100}
+      SESSION_COOKIE_SECURE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${UCM_BIND_HOST:-127.0.0.1}:${UCM_API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  audit-exporter:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.services.audit_exporter"]
+    environment:
+      APP_ENV: development
+      DB_NAME: ${UCM_DB_NAME:-ucm}
+      DB_USER: ucm
+      DB_PASSWORD: ucm-local-development
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+    depends_on:
+      backend:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${UCM_PUBLIC_API_BASE_URL:-}
+        UCM_API_INTERNAL_URL: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "${UCM_BIND_HOST:-127.0.0.1}:${UCM_WEB_PORT:-3000}:3000"
+
+  zap:
+    image: zaproxy/zap-bare
+    profiles: [security]
+    command: ["zap.sh", "-cmd", "-autorun", "/zap/wrk/zap-portal.yaml"]
+    volumes:
+      - ./docs/security:/zap/wrk:rw
+    depends_on:
+      - frontend
+
+volumes:
+  postgres_data:
+  elasticsearch_data:

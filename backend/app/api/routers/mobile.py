@@ -1,112 +1,142 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.api.dependencies import get_db, require_jwt
-from app.schemas.mobile import *
-from app.schemas.auth import LoginRequest
-from app.core.security import create_jwt, hash_password
-from app.db.models import User, ResetChallenge
-from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.asymmetric import padding
 import base64
+import hashlib
 import secrets
-from datetime import datetime
-import requests
-from app.core.config import settings
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import delete, desc
+from sqlalchemy.orm import Session
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from app.api.dependencies import get_db, require_session
+from app.core.limiter import limiter
+from app.core.password_policy import normalize_password, validate_password
+from app.core.security import hash_password, verify_password
+from app.db.models import PasswordHistory, ResetChallenge, LoginTrustChallenge, SessionTrust, AuthSession, User
+from app.schemas.auth import LoginRequest
+from app.schemas.mobile import AppLoginResponse, StorePublicKeyRequest, ResetChallengeResponse, VerifyResetRequest
+from app.services.auth_service import AuthService, PASSWORD_HISTORY_LIMIT
+from app.services.audit_service import record_security_event
+from app.services.session_service import revoke_sessions, utc
 
 router = APIRouter()
 
+
+def reset_message(challenge_b64: str, password: str) -> bytes:
+    # Bind the device approval to both the nonce and the actual new password.
+    return b"UCM:password-reset:v1\n" + base64.b64decode(challenge_b64, validate=True) + b"\n" + hashlib.sha256(
+        normalize_password(password).encode("utf-8")
+    ).digest()
+
+
 @router.post("/login", response_model=AppLoginResponse)
-async def app_login(payload: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == payload.username).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-        
-    from utils import PasswordCrypto
-    hashed_pw = user.password_hash.encode("utf-8") if isinstance(user.password_hash, str) else user.password_hash
-    if not PasswordCrypto.verify_password(payload.password, hashed_pw):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-        
-    token = create_jwt(payload.username)
-    return AppLoginResponse(success=True, token=token, username=payload.username)
+@limiter.limit("60/minute")
+async def app_login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    success, data = AuthService.login_web(db, payload.username, payload.password,
+                                         request.client.host if request.client else None, "android")
+    if not success:
+        if data.get("rate_limited"):
+            raise HTTPException(status_code=429, detail=data["error"],
+                                headers={"Retry-After": str(data["retry_after"])})
+        if data.get("password_compromised"):
+            raise HTTPException(status_code=403, detail=data["error"])
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
+    return AppLoginResponse(success=True, token=data["access_token"], username=data["username"])
+
 
 @router.post("/store-public-key")
-async def store_public_key(payload: StorePublicKeyRequest, caller: str = Depends(require_jwt), db: Session = Depends(get_db)):
+@limiter.limit("5/hour")
+async def store_public_key(payload: StorePublicKeyRequest, request: Request,
+                           session: AuthSession = Depends(require_session), db: Session = Depends(get_db)):
+    caller = session.username
     if caller != payload.username:
-        raise HTTPException(status_code=403, detail="Token does not match username")
-        
+        raise HTTPException(status_code=403, detail="Account mismatch.")
+    user = db.get(User, caller)
+    if not verify_password(normalize_password(payload.current_password), user.password_hash).valid:
+        raise HTTPException(status_code=403, detail="Current password is incorrect.")
     try:
-        serialization.load_pem_public_key(payload.public_key_pem.encode())
+        key = serialization.load_pem_public_key(payload.public_key_pem.encode())
+        if not isinstance(key, rsa.RSAPublicKey) or not 2048 <= key.key_size <= 4096:
+            raise ValueError()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid public key PEM")
-        
-    user = db.query(User).filter(User.username == payload.username).first()
-    if user:
-        user.public_key = payload.public_key_pem
-        db.commit()
-    return {"success": True}
+        raise HTTPException(status_code=400, detail="Use an RSA public key between 2048 and 4096 bits.")
+    if user.public_key:
+        old_key = serialization.load_pem_public_key(user.public_key.encode())
+        if old_key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo) == key.public_bytes(
+                serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo):
+            return {"success": True, "message": "This phone is already enrolled."}
+        grant = db.get(SessionTrust, session.id)
+        if not grant or grant.level not in {"remote", "office"} or utc(grant.expires_at) <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=403, detail="Approve this session with the existing phone before replacing its key.")
+    user.public_key = payload.public_key_pem
+    db.query(ResetChallenge).filter(ResetChallenge.username == caller).delete()
+    db.query(LoginTrustChallenge).filter(LoginTrustChallenge.username == caller).delete()
+    session_ids = [row[0] for row in db.query(AuthSession.id).filter(AuthSession.username == caller).all()]
+    db.query(SessionTrust).filter(SessionTrust.session_id.in_(session_ids)).delete(synchronize_session=False)
+    record_security_event(db, event_type="DEVICE_ENROLLED", username=caller,
+                          ip_address=request.client.host if request.client else None)
+    db.commit()
+    return {"success": True, "message": "Recovery device enrolled."}
 
-@router.post("/store-fcm-token")
-async def store_fcm_token(payload: StoreFcmTokenRequest, caller: str = Depends(require_jwt), db: Session = Depends(get_db)):
-    if caller != payload.username:
-        raise HTTPException(status_code=403, detail="Token does not match username")
-        
-    user = db.query(User).filter(User.username == payload.username).first()
-    if user:
-        user.fcm_token = payload.fcm_token
-        db.commit()
-    return {"success": True}
 
 @router.get("/get-reset-challenge", response_model=ResetChallengeResponse)
-async def get_reset_challenge(username: str, caller: str = Depends(require_jwt), db: Session = Depends(get_db)):
-    if caller != username:
-        raise HTTPException(status_code=403, detail="Token does not match username")
-        
-    nonce = secrets.token_bytes(32)
-    nonce_b64 = base64.b64encode(nonce).decode()
-    
-    challenge = db.query(ResetChallenge).filter(ResetChallenge.username == username).first()
-    if challenge:
+@limiter.limit("5/minute")
+async def get_reset_challenge(username: str, request: Request, db: Session = Depends(get_db)):
+    nonce_b64 = base64.b64encode(secrets.token_bytes(32)).decode()
+    user = db.get(User, username[:64])
+    # Same response shape for unknown accounts, so this is not an enrollment lookup.
+    if user and user.public_key:
+        challenge = db.get(ResetChallenge, username)
+        if not challenge:
+            challenge = ResetChallenge(username=username)
+            db.add(challenge)
         challenge.challenge_b64 = nonce_b64
-        challenge.created_at = datetime.utcnow()
-    else:
-        new_challenge = ResetChallenge(username=username, challenge_b64=nonce_b64)
-        db.add(new_challenge)
-    db.commit()
-    
+        challenge.created_at = datetime.now(timezone.utc)
+        db.commit()
     return ResetChallengeResponse(challenge=nonce_b64)
 
+
 @router.post("/verify-reset")
-async def verify_reset(payload: VerifyResetRequest, caller: str = Depends(require_jwt), db: Session = Depends(get_db)):
-    if caller != payload.username:
-        raise HTTPException(status_code=403, detail="Token does not match username")
-        
-    challenge = db.query(ResetChallenge).filter(ResetChallenge.username == payload.username).first()
-    if not challenge or challenge.challenge_b64 != payload.challenge_b64:
-        raise HTTPException(status_code=400, detail="Challenge mismatch or not found")
-        
-    if (datetime.utcnow() - challenge.created_at.replace(tzinfo=None)).total_seconds() > 300:
-        raise HTTPException(status_code=400, detail="Challenge expired")
-        
-    user = db.query(User).filter(User.username == payload.username).first()
-    if not user or not user.public_key:
-        raise HTTPException(status_code=400, detail="No public key registered")
-        
+@limiter.limit("5/minute")
+async def verify_reset(payload: VerifyResetRequest, request: Request, db: Session = Depends(get_db)):
+    challenge = db.get(ResetChallenge, payload.username)
+    user = db.get(User, payload.username)
+    if (not challenge or not user or not user.public_key
+            or challenge.challenge_b64 != payload.challenge_b64
+            or (datetime.now(timezone.utc) - utc(challenge.created_at)).total_seconds() > 300):
+        raise HTTPException(status_code=400, detail="Recovery approval is invalid or expired.")
     try:
-        public_key = serialization.load_pem_public_key(user.public_key.encode())
-        signature = base64.b64decode(payload.signed_challenge_b64)
-        public_key.verify(
-            signature,
-            base64.b64decode(payload.challenge_b64),
-            padding.PKCS1v15(),
-            hashes.SHA256()
-        )
+        key = serialization.load_pem_public_key(user.public_key.encode())
+        key.verify(base64.b64decode(payload.signed_challenge_b64, validate=True),
+                   reset_message(payload.challenge_b64, payload.new_password),
+                   padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32), hashes.SHA256())
     except Exception:
-        raise HTTPException(status_code=400, detail="Signature verification failed")
-        
-    from utils import PasswordCrypto
-    new_hash = PasswordCrypto.hash_password(payload.new_password).decode("utf-8")
-    user.password_hash = new_hash
-    db.delete(challenge)
+        raise HTTPException(status_code=400, detail="Recovery approval is invalid or expired.")
+    policy = validate_password(payload.new_password, username=user.username, email=user.email)
+    if not policy.accepted:
+        raise HTTPException(status_code=400, detail=" ".join(policy.errors))
+    normalized = normalize_password(payload.new_password)
+    history = db.query(PasswordHistory).filter(PasswordHistory.username == user.username).order_by(
+        desc(PasswordHistory.created_at), desc(PasswordHistory.id),
+    ).limit(PASSWORD_HISTORY_LIMIT).all()
+    if verify_password(normalized, user.password_hash).valid or any(
+        verify_password(normalized, entry.password_hash).valid for entry in history
+    ):
+        raise HTTPException(status_code=400, detail="Choose a password you have not used recently.")
+    # Conditional delete is a compare-and-consume operation. Concurrent/replayed
+    # requests cannot both update the password with the same challenge.
+    consumed = db.execute(delete(ResetChallenge).where(
+        ResetChallenge.username == payload.username,
+        ResetChallenge.challenge_b64 == payload.challenge_b64,
+    )).rowcount
+    if consumed != 1:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Recovery approval was already used.")
+    user.password_hash = hash_password(normalized)
+    user.passwd_changed = datetime.now(timezone.utc)
+    revoke_sessions(db, user.username)
+    db.add(PasswordHistory(username=user.username, password_hash=user.password_hash))
+    record_security_event(db, event_type="DEVICE_PASSWORD_RESET", username=user.username,
+                          ip_address=request.client.host if request.client else None,
+                          details={"signature_algorithm": "RSA-PSS-SHA256", "salt_bytes": 32})
     db.commit()
-    
-    return {"success": True, "message": "Password reset successfully"}
+    return {"success": True, "message": "Password reset. Sign in with your new password."}

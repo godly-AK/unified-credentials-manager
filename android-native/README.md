@@ -1,0 +1,37 @@
+# UCM native Android authenticator
+The Android Studio/Kotlin client includes enrollment, password reset, main-phone login approval, and workplace-node Bluetooth witness mode. Flutter remains a historical reference.
+
+## Requirements
+Android 15/API 35 or newer, a strong biometric already enrolled, Android SDK 36 for compilation, Gradle 8.13, AGP 8.13.2, and Android Studio's bundled JDK. The API 35 floor allows an explicit SHA-256 MGF1 policy for Keystore RSA keys.
+
+## Flows
+**Enroll phone:** enter the UCM server, username, and current password. The app signs in, generates/reuses an account-and-server-specific 2048-bit Keystore key, stores its public key through the authenticated enrollment API, and signs out the temporary bearer session.
+
+**Reset password:** no login is required. Enter a new password twice; obtain a nonce; approve a BiometricPrompt CryptoObject; sign the nonce plus new-password digest; send the approval to the backend. The backend verifies it and invalidates existing sessions.
+
+**Approve remote access:** start a login request on the website's **Login pipeline** page. Enter its request ID on the main phone's **Approve** tab, review the account, and use the strong biometric prompt. UCM validates the signed role-specific nonce and grants the browser session short-lived remote access.
+
+**Workplace node:** create a five-minute enrollment code for slot A or B on the website and claim it on a separate phone's **Node** tab. This generates a distinct Android Keystore key. Start Bluetooth witness mode and keep the app visible. The computer writes a fresh request ID to the node's BLE GATT service; the node fetches the request from UCM and sends a signed approval to UCM. Both nodes are required for office access. See [trust-level limits](../docs/TRUST_LEVELS.md).
+
+Passwords and bearer credentials are kept in memory only. Private keys never leave Android Keystore. Screenshots are disabled for this credential UI. Changed biometric enrollment invalidates the signing key.
+
+## Transport
+The release configuration allows HTTPS only and keeps normal certificate validation. Debug permits HTTP solely to 10.0.2.2, localhost, and 127.0.0.1. Use http://10.0.2.2:8000 for an emulator connecting to the host's local demo. Physical phones need a trusted HTTPS address reachable from their network; the local `localhost` launcher alone does not provide one.
+
+The URL host and username form the key's scope. Enroll and recover with the same normalized server address. A production deployment needs a valid/trusted HTTPS certificate; there is no trust-all workaround.
+
+For the planned three-physical-phone demonstration, use the single HTTPS origin in the [phone-lab runbook](../docs/PHONE_LAB.md). The ngrok URL must be identical in the portal and on all three phones. The tunnel is for the lab only; UCM still verifies every signature itself.
+
+## Build and test
+```powershell
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+.\gradlew.bat assembleDebug testDebugUnitTest
+```
+APK: app/build/outputs/apk/debug/app-debug.apk.
+
+On Windows, Gradle may otherwise pick a different system JDK. The November 3 command above passed with Android Studio's JDK 21; the system JDK 25 failed before compilation.
+
+Three JVM tests validate the reset and login-signature message formats. The APK compiles. On October 30, the app ran on an Android API 36.1 emulator with an enrolled simulated fingerprint. It enrolled a synthetic main-phone key through the live API, signed a login request after BiometricPrompt, and unlocked remote data while office data remained locked. It also signed a password reset after BiometricPrompt; the old password was rejected and the new password worked. The same emulator claimed a workplace-node enrollment code, and the Android UI confirmed that node A started Bluetooth GATT advertising. Browser-to-phone Bluetooth contact, two simultaneous nodes, physical proximity, and real-device biometrics still require a three-phone rehearsal.
+
+Changing or removing an enrolled main-phone key requires a recent signed approval from that phone plus the current password. A lost/inaccessible main phone uses the [operator recovery command](../docs/TRUST_LEVELS.md#operator-recovery-for-a-lost-main-phone); self-service password-only replacement is intentionally blocked. The project currently allows one enrolled main-phone public key per account. Recovery from simultaneous loss of both password and phone still needs an organizational identity-verification policy.
