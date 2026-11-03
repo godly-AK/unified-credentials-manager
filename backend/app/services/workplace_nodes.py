@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.db.models import AuthSession, LoginTrustChallenge, NodeEnrollmentTicket, SessionTrust, WorkplaceNode
+from app.db.models import AuthSession, LoginNodeApproval, LoginTrustChallenge, NodeEnrollmentTicket, SessionTrust, WorkplaceNode
 from app.services.audit_service import record_security_event
 
 
@@ -24,9 +24,11 @@ def revoke_workplace_node(
         db.query(SessionTrust).filter(
             SessionTrust.session_id.in_(session_ids), SessionTrust.level == "office"
         ).delete(synchronize_session=False)
-    db.query(LoginTrustChallenge).filter(
-        LoginTrustChallenge.username == node.username
-    ).delete(synchronize_session=False)
+    challenge_ids = [row[0] for row in db.query(LoginTrustChallenge.id).filter(
+        LoginTrustChallenge.username == node.username).all()]
+    if challenge_ids:
+        db.query(LoginNodeApproval).filter(LoginNodeApproval.challenge_id.in_(challenge_ids)).delete(synchronize_session=False)
+    db.query(LoginTrustChallenge).filter(LoginTrustChallenge.username == node.username).delete(synchronize_session=False)
     # An outstanding enrollment code must not become usable after a node is removed.
     db.query(NodeEnrollmentTicket).filter(
         NodeEnrollmentTicket.username == node.username

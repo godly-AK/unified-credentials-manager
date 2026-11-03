@@ -26,7 +26,7 @@ Both commands require the exact username to be typed again. They need database-h
 ## What an administrator can do
 
 1. Sign in to the website. The sign-in page starts a request automatically; enter its eight-digit code in the enrolled main phone and approve.
-2. Open **Security monitoring** from the account page. The summary shows the past 24 hours of events, failed sign-ins, and high-risk events, plus all currently open high-risk alerts. The seven-day charts show activity by day and server-assigned risk, and the request table shows the last 25 Pixel and workplace-node approvals.
+2. Open **Security monitoring** from the account page. The summary shows the past 24 hours of events, failed sign-ins, and high-risk events, plus all currently open high-risk alerts. The seven-day charts show activity by day and server-assigned risk, and the request table shows the last 25 main-phone and trusted-node approvals.
 3. Filter events by exact username, risk, or event type; page through older results. View high-risk events and their recorded details.
 4. Record a review note on a high-risk event. UCM keeps the original event, stores the reviewer and time separately, and records a `SECURITY_ALERT_REVIEWED` event. A second review of the same alert is rejected.
 

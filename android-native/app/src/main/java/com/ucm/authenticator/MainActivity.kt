@@ -30,17 +30,18 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.Base64
+import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 class MainActivity : FragmentActivity() {
     private var workplaceServer: WorkplaceBleServer? = null
 
-    fun startWorkplaceNode(api: UcmApi, username: String, slot: String, nodeId: String,
+    fun startWorkplaceNode(api: UcmApi, username: String, slot: String, nodeId: String, keyScope: String,
                            onStatus: (String) -> Unit) {
         workplaceServer?.stop()
         workplaceServer = WorkplaceBleServer(this, api, username, slot, nodeId,
-            WorkplaceNodeKeyManager(api.baseUrl + "|node|" + username + "|" + slot), onStatus)
+            WorkplaceNodeKeyManager(api.baseUrl + "|node|" + username + "|" + keyScope), onStatus)
         workplaceServer?.start()
     }
 
@@ -102,9 +103,10 @@ private fun AuthenticatorScreen(activity: MainActivity) {
     var nodeMode by rememberSaveable { mutableStateOf(false) }
     var approvalId by rememberSaveable { mutableStateOf("") }
     var nodeTicket by rememberSaveable { mutableStateOf("") }
-    var nodeSlot by rememberSaveable { mutableStateOf("A") }
     val nodePrefs = remember { activity.getSharedPreferences("ucm_workplace_node", 0) }
     var nodeId by rememberSaveable { mutableStateOf(nodePrefs.getString("node_id", "") ?: "") }
+    var nodeSlot by rememberSaveable { mutableStateOf(nodePrefs.getString("slot", "") ?: "") }
+    var nodeKeyScope by rememberSaveable { mutableStateOf(nodePrefs.getString("key_scope", nodeSlot) ?: nodeSlot) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var failed by remember { mutableStateOf(false) }
@@ -125,19 +127,15 @@ private fun AuthenticatorScreen(activity: MainActivity) {
         OutlinedTextField(server, { server = it }, label = { Text("UCM server") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
         if (nodeMode) {
-            Text("Keep this workplace phone at its registered position and connected to the UCM server.",
+            Text("Keep this trusted node nearby and connected to the UCM server.",
                 style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FilterChip(selected = nodeSlot == "A", onClick = { nodeSlot = "A" }, label = { Text("Node A") })
-                FilterChip(selected = nodeSlot == "B", onClick = { nodeSlot = "B" }, label = { Text("Node B") })
-            }
             if (nodeId.isBlank()) {
                 OutlinedTextField(nodeTicket, { nodeTicket = it }, label = { Text("One-time enrollment code") },
                     singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
             } else {
                 Text("Registered node: $nodeId", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = {
-                    activity.stopWorkplaceNode(); nodePrefs.edit().clear().apply(); nodeId = ""
+                    activity.stopWorkplaceNode(); nodePrefs.edit().clear().apply(); nodeId = ""; nodeSlot = ""; nodeKeyScope = ""
                     status = "Local node registration cleared. Revoke this key on the website too."
                 }) { Text("Clear local node") }
             }
@@ -167,24 +165,27 @@ private fun AuthenticatorScreen(activity: MainActivity) {
                         if (nodeMode) {
                             if (nodeId.isBlank()) {
                                 require(nodeTicket.isNotBlank()) { "Enter the one-time code from the website." }
-                                val nodeKeys = WorkplaceNodeKeyManager(api.baseUrl + "|node|" + account + "|" + nodeSlot)
+                                if (nodeKeyScope.isBlank()) nodeKeyScope = "new-" + UUID.randomUUID().toString()
+                                val nodeKeys = WorkplaceNodeKeyManager(api.baseUrl + "|node|" + account + "|" + nodeKeyScope)
                                 val enrolled = api.request("/api/trust/nodes/claim", JSONObject()
                                     .put("ticket", nodeTicket.trim()).put("public_key_pem", nodeKeys.publicKeyPem()))
-                                require(enrolled.getString("username") == account && enrolled.getString("slot") == nodeSlot) {
-                                    "The code belongs to a different account or slot."
+                                require(enrolled.getString("username") == account) {
+                                    "The code belongs to a different account."
                                 }
+                                nodeSlot = enrolled.getString("slot")
                                 nodeId = enrolled.getString("id")
                                 nodePrefs.edit().putString("node_id", nodeId).putString("server", api.baseUrl)
-                                    .putString("username", account).putString("slot", nodeSlot).apply()
+                                    .putString("username", account).putString("slot", nodeSlot)
+                                    .putString("key_scope", nodeKeyScope).apply()
                                 nodeTicket = ""
                                 status = "Node enrolled. Press Start Bluetooth witness."
                             } else {
                                 require(nodePrefs.getString("server", "") == api.baseUrl &&
                                     nodePrefs.getString("username", "") == account &&
                                     nodePrefs.getString("slot", "") == nodeSlot) {
-                                    "Use the same server, account and slot used during node enrollment."
+                                    "Use the same server and account used during node enrollment."
                                 }
-                                activity.startWorkplaceNode(api, account, nodeSlot, nodeId) { status = it }
+                                activity.startWorkplaceNode(api, account, nodeSlot, nodeId, nodeKeyScope) { status = it }
                             }
                         } else if (approval) {
                             val input = approvalId.trim()

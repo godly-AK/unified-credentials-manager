@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.api.routers.trust import require_remote
-from app.db.models import AuthSession, LoginTrustChallenge, SecurityAlertReview, SecurityEvent, User
+from app.db.models import AuthSession, LoginNodeApproval, LoginTrustChallenge, SecurityAlertReview, SecurityEvent, User
 from app.services.audit_service import record_security_event
 from app.services.session_service import utc
 
@@ -73,6 +73,9 @@ def overview(_: AuthSession = Depends(require_monitoring_admin), db: Session = D
     requests = db.query(LoginTrustChallenge).filter(
         LoginTrustChallenge.created_at >= since,
     ).order_by(LoginTrustChallenge.created_at.desc()).limit(25).all()
+    counts = dict(db.query(LoginNodeApproval.challenge_id, func.count(LoginNodeApproval.node_id)).filter(
+        LoginNodeApproval.challenge_id.in_([row.id for row in requests])
+    ).group_by(LoginNodeApproval.challenge_id).all()) if requests else {}
     return {
         "period_days": 7,
         "risk_counts": {risk: count for risk, count in risk_rows},
@@ -83,8 +86,7 @@ def overview(_: AuthSession = Depends(require_monitoring_admin), db: Session = D
         "requests": [{"id": row.id, "username": row.username,
                       "created_at": utc(row.created_at).isoformat(),
                       "phone": bool(row.phone_approved_at),
-                      "node_a": bool(row.node_a_approved_at),
-                      "node_b": bool(row.node_b_approved_at),
+                      "approved_node_count": counts.get(row.id, 0),
                       "expired": utc(row.expires_at) <= now} for row in requests],
     }
 

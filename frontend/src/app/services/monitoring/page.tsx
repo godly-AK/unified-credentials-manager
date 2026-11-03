@@ -22,7 +22,7 @@ type Overview = {
   risk_counts: Partial<Record<Risk, number>>;
   top_event_types: { event_type: string; count: number }[];
   daily_events: { day: string; count: number }[];
-  requests: { id: string; username: string; created_at: string; phone: boolean; node_a: boolean; node_b: boolean; expired: boolean }[];
+  requests: { id: string; username: string; created_at: string; phone: boolean; approved_node_count: number; expired: boolean }[];
 };
 type Filters = { username: string; risk: '' | Risk; event_type: string };
 type Status = 'loading' | 'ready' | 'needs-phone' | 'forbidden' | 'error';
@@ -162,9 +162,9 @@ export default function MonitoringPage() {
           <h3>Most common events</h3><div className="monitor-top-events">{overview.top_event_types.map(item => <div key={item.event_type}><span>{formatEvent(item.event_type)}</span><strong>{item.count}</strong></div>)}</div>
         </section>
       </div>}
-      {overview && <section className="panel monitor-section"><div className="panel-heading"><div><h2>Login requests</h2><p className="muted">Latest 25 requests from the last seven days. Each tablet must sign the same request for office access.</p></div></div>
-        <div className="table-scroll"><table><thead><tr><th>When</th><th>Account</th><th>Pixel</th><th>Node A</th><th>Node B</th><th>Result</th></tr></thead><tbody>
-          {overview.requests.map(item => <tr key={item.id}><td>{formatTime(item.created_at)}</td><td>{item.username}</td><td>{item.phone ? 'Approved' : 'Waiting'}</td><td>{item.node_a ? 'Approved' : 'Waiting'}</td><td>{item.node_b ? 'Approved' : 'Waiting'}</td><td>{item.phone && item.node_a && item.node_b ? 'Office' : item.phone ? 'Remote' : item.expired ? 'Expired' : 'Pending'}</td></tr>)}
+      {overview && <section className="panel monitor-section"><div className="panel-heading"><div><h2>Login requests</h2><p className="muted">Latest 25 requests from the last seven days. Any two distinct trusted nodes can approve office access.</p></div></div>
+        <div className="table-scroll"><table><thead><tr><th>When</th><th>Account</th><th>Main phone</th><th>Trusted nodes</th><th>Result</th></tr></thead><tbody>
+          {overview.requests.map(item => <tr key={item.id}><td>{formatTime(item.created_at)}</td><td>{item.username}</td><td>{item.phone ? 'Approved' : 'Waiting'}</td><td>{item.approved_node_count} of 2 required</td><td>{item.phone && item.approved_node_count >= 2 ? 'Office' : item.phone ? 'Remote' : item.expired ? 'Expired' : 'Pending'}</td></tr>)}
         </tbody></table></div>{overview.requests.length === 0 && <p className="empty">No login requests in this period.</p>}
       </section>}
       {error && <p className="notice error" role="alert">{error}</p>}

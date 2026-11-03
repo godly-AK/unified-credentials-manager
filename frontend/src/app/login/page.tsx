@@ -7,10 +7,10 @@ import PasswordField from '@/components/PasswordField';
 import api, { getApiError } from '@/lib/api';
 import { grantWorkplacePhone, restoreWorkplacePhones, sendChallengeToGrantedPhones } from '@/lib/workplace-bluetooth';
 
-type Challenge = { id: string; approval_code: string | null; expires_at: string; phone: boolean; node_a: boolean; node_b: boolean };
+type Challenge = { id: string; approval_code: string | null; expires_at: string; phone: boolean; approved_node_ids: string[]; approved_node_count: number };
 type TrustStatus = {
   username: string; level: 'password' | 'remote' | 'office'; phone_enrolled: boolean;
-  office_trust_enabled: boolean; nodes: { id: string; slot: 'A' | 'B'; label: string }[];
+  office_trust_enabled: boolean; nodes: { id: string; label: string }[];
   challenge: Challenge | null;
 };
 type ContactDone = { id: string; at: number; granted: number };
@@ -25,7 +25,7 @@ export default function Login() {
   const [status, setStatus] = useState<TrustStatus | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
-  const [pairing, setPairing] = useState('Checking saved workplace tablets…');
+  const [pairing, setPairing] = useState('Checking selected trusted nodes…');
   const [bluetoothMessage, setBluetoothMessage] = useState('');
   const [contactDone, setContactDone] = useState<ContactDone | null>(null);
   const contactStarted = useRef('');
@@ -81,18 +81,18 @@ export default function Login() {
     if (!status?.office_trust_enabled) return;
     void restoreWorkplacePhones(status.username).then(result => {
       setPairing(result.supported
-        ? `${result.count} of 2 workplace tablets previously selected in this browser.`
-        : 'This browser cannot restore Bluetooth access. Choose each tablet below in desktop Chrome or Edge.');
+        ? `${result.count} trusted ${result.count === 1 ? 'node' : 'nodes'} previously selected in this browser.`
+        : 'This browser cannot restore Bluetooth access. Choose nearby nodes in desktop Chrome or Edge.');
     }).catch(() => setPairing('Bluetooth is unavailable in this browser. Remote access still works.'));
   }, [status?.office_trust_enabled, status?.username]);
 
   const contact = useCallback(async (challengeId: string, account: string) => {
-    setBluetoothMessage('Checking the nearby workplace tablets…');
+    setBluetoothMessage('Checking nearby trusted nodes…');
     try {
       const result = await sendChallengeToGrantedPhones(challengeId, account, setBluetoothMessage);
       const summary = result.granted === 0
-        ? 'No permitted tablets found. Remote access will open after the phone approval.'
-        : `${result.reached} of ${result.granted} Bluetooth requests sent. ${result.failures.join(' | ') || 'Waiting for signed tablet reports.'}`;
+        ? 'No selected trusted nodes found. Remote access will open after the phone approval.'
+        : `${result.reached} of ${result.granted} Bluetooth requests sent. ${result.failures.join(' | ') || 'Waiting for signed node reports.'}`;
       setBluetoothMessage(summary);
       setContactDone({ id: challengeId, at: Date.now(), granted: result.granted });
       await refreshStatus();
@@ -138,17 +138,17 @@ export default function Login() {
     finally { setBusy(''); }
   }
 
-  async function chooseTablet(slot: 'A' | 'B') {
+  async function chooseNode() {
     if (!status) return;
     setBusy('bluetooth'); setError('');
     try {
-      const count = await grantWorkplacePhone(slot, status.username);
-      setPairing(`${count} of 2 workplace tablets selected in this browser.`);
+      const count = await grantWorkplacePhone(status.username);
+      setPairing(`${count} trusted ${count === 1 ? 'node' : 'nodes'} selected in this browser.`);
       if (status.challenge?.phone) {
         setContactDone(null);
         await contact(status.challenge.id, status.username);
       }
-    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not select this tablet.'); }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not select this node.'); }
     finally { setBusy(''); }
   }
 
@@ -157,7 +157,7 @@ export default function Login() {
   const levels = [
     { name: 'Account', detail: 'Password accepted', done: phase === 'approval' },
     { name: 'Remote', detail: 'Main phone approved', done: phoneApproved },
-    { name: 'Office', detail: 'Both workplace tablets signed', done: officeApproved },
+    { name: 'Office', detail: 'Two distinct trusted nodes signed', done: officeApproved },
   ];
 
   return <main className="login-workspace">
@@ -171,7 +171,7 @@ export default function Login() {
           <span className="access-ledger-state">{level.done ? 'Open' : 'Waiting'}</span>
         </div>)}
       </div>
-      <p className="login-context-note">Workplace tablets are checked after your main phone approves. If they are unavailable, you can continue with remote access.</p>
+      <p className="login-context-note">Trusted nodes are checked after your main phone approves. If fewer than two sign, you can continue with remote access.</p>
     </section>
 
     <section className="login-work" aria-live="polite">
@@ -194,15 +194,15 @@ export default function Login() {
         <h2>{status?.phone_enrolled ? 'Approve on your main phone' : 'Set up your main phone'}</h2>
         <p className="muted">Signed in as <strong>{status?.username ?? username}</strong>.</p>
         {error && <p className="notice error" role="alert">{error}</p>}
-        {!status?.phone_enrolled ? <div className="approval-instruction"><p>Enroll this account in the UCM Android app to enable remote and office access.</p><Link href="/services" className="btn">Open your account</Link></div> : <>
+        {!status?.phone_enrolled ? <div className="approval-instruction"><p>Open the UCM Android app, choose <strong>Enroll</strong>, and enroll this account with your current password. Return here to start main-phone approval. Account pages remain locked until that approval.</p><button className="btn secondary small" onClick={() => void (async () => { const updated = await refreshStatus(); if (updated?.phone_enrolled) await startRequest(); })()}>I have enrolled my phone</button></div> : <>
           {status?.challenge && !phoneApproved ? <div className="approval-code"><span>Request code</span><code>{status.challenge.approval_code ?? status.challenge.id}</code><p>Enter this in the app’s <strong>Approve</strong> screen, then use your biometric.</p><small>Expires {new Date(status.challenge.expires_at).toLocaleTimeString()}.</small></div> :
-            phoneApproved ? <div className="approval-instruction success"><strong>Main phone approved</strong><p>Remote access is ready. Checking workplace tablets for office access…</p></div> :
+            phoneApproved ? <div className="approval-instruction success"><strong>Main phone approved</strong><p>Remote access is ready. Checking trusted nodes for office access…</p></div> :
               <div className="approval-instruction"><p>The previous code expired. Start another request.</p></div>}
           <button className="btn secondary small" disabled={!!busy} onClick={() => void startRequest()}>Get a new code</button>
           {status?.office_trust_enabled && <div className="login-bluetooth">
-            <h3>Workplace tablets</h3><p>{pairing}</p>
-            <div className="login-bluetooth-actions"><button className="btn secondary small" disabled={!!busy} onClick={() => void chooseTablet('A')}>Choose tablet A</button><button className="btn secondary small" disabled={!!busy} onClick={() => void chooseTablet('B')}>Choose tablet B</button></div>
-            <div className="login-node-states"><span>Node A <strong>{status.challenge?.node_a ? 'Approved' : 'Waiting'}</strong></span><span>Node B <strong>{status.challenge?.node_b ? 'Approved' : 'Waiting'}</strong></span></div>
+            <h3>Trusted nodes</h3><p>{pairing}</p>
+            <div className="login-bluetooth-actions"><button className="btn secondary small" disabled={!!busy} onClick={() => void chooseNode()}>Choose a nearby node</button></div>
+            <div className="login-node-states"><span>Distinct node signatures <strong>{status.challenge?.approved_node_count ?? 0} of 2 required</strong></span></div>
             {bluetoothMessage && <p className="login-bluetooth-status" role="status">{bluetoothMessage}</p>}
           </div>}
           {phoneApproved && <button className="text-link login-continue" onClick={() => router.replace('/services')}>Continue with remote access</button>}

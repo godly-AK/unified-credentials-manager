@@ -4,19 +4,19 @@ UCM now supports three access levels for the same account. The backend, not the 
 
 | Level | Requirement | Example resource |
 |---|---|---|
-| Account | Password and an active session | Account settings |
-| Remote | Account session plus a fresh approval signed by the enrolled main phone after a strong biometric prompt | `/api/data/remote` |
-| Office | Remote approval plus fresh signatures from two distinct registered workplace phones, A and B, prompted by local Bluetooth contact from the browser | `/api/data/office` |
+| Pending | Password accepted; waiting for the main phone | Approval setup only; account pages stay locked |
+| Remote | Pending session plus a fresh approval signed by the enrolled main phone after a strong biometric prompt | Account pages and `/api/data/remote` |
+| Office | Remote approval plus fresh signatures from any two distinct registered trusted nodes, prompted by local Bluetooth contact from the browser | `/api/data/office` |
 
 The [sign-in page](../frontend/src/app/login/page.tsx) shows the live steps, the eight-digit code, and Bluetooth contact progress. The [workplace devices page](../frontend/src/app/services/pipeline/page.tsx) remains available for enrollment, revocation, and detailed diagnostics. The [confidential workspace](../frontend/src/app/services/confidential/page.tsx) requests its content from the office-guarded backend endpoint. A changed label or hidden link cannot change the API decision. A new request has a random nonce, a unique ID, a three-minute deadline, and a role-specific signed message. The short-lived trust grant expires after ten minutes or when the underlying session ends. Starting another request invalidates the old pending request.
 
 ## Setup and demonstration
 
-1. Register and log in on the website. Enroll the main phone in the Android app using the **Enroll** tab.
+1. Register and enter your password on the website. Enroll the main phone in the Android app using the **Enroll** tab. The temporary password session permits this bootstrap step but cannot open account pages.
 2. On the sign-in page, enter the password. The page shows an eight-digit code. On the main phone, open **Approve**, enter that code, and approve the biometric prompt. Remote access then opens.
-3. For workplace nodes, enter a label, choose slot A or B, and create a one-time enrollment code with the current account password. Enter the code in the Android app's **Node** tab on a separate phone. Repeat with the third phone for the other slot.
-4. On each workplace phone, press **Start Bluetooth witness** and leave the app on screen. On the sign-in page, choose tablet A and B once to grant browser Bluetooth permission. Later requests use the previously granted devices when the browser supports `getDevices()`.
-5. After the main phone approves a new request, the browser automatically attempts to contact both saved tablets over Bluetooth. Each phone retrieves the nonce from UCM, checks the account, signs a message with its own Android Keystore key, and reports directly to UCM. The office resource opens only after the main phone and both different node slots have approved the same request. If they are unavailable, the user continues with remote access.
+3. For each trusted node, enter a label and create a one-time enrollment code with the current account password after main-phone approval. Enter the code in the Android app's **Node** tab on a separate device. The server assigns its internal signing role automatically. You can register more than two nodes.
+4. On each node, press **Start Bluetooth witness** and leave the app on screen. On the sign-in page, choose nearby nodes once to grant browser Bluetooth permission. Later requests use the previously selected devices when the browser supports `getDevices()`.
+5. After the main phone approves a new request, the browser automatically attempts to contact selected nodes over Bluetooth. Each node retrieves the nonce from UCM, checks the account, signs a message with its own Android Keystore key, and reports directly to UCM. The office resource opens after any two different registered node keys approve the same request. Otherwise the user continues with remote access.
 6. An account owner can revoke a lost workplace node on the page with the current password. A database operator can do the same without the owner's session using the emergency command below. Revocation clears office grants, pending requests, and unused node-enrollment codes. Re-enroll a replacement phone.
 
 On the local demo, office access is **disabled by default** with `OFFICE_TRUST_ENABLED=false`. Enable it only after the computer and both real workplace phones have passed an end-to-end rehearsal. Remote access can still be exercised with the main phone. For physical phones, UCM must be reachable at a trusted HTTPS address; the debug HTTP exception is limited to an Android emulator using `10.0.2.2`. The local launcher listening on `localhost` is not a physical-phone deployment.
@@ -25,20 +25,20 @@ The isolated [phone-lab launcher and acceptance record](PHONE_LAB.md) prepares o
 
 ## Security boundary and limits
 
-- The node private keys stay in Android Keystore. UCM validates RSA-PSS/SHA-256 signatures for Android 15+ nodes and P-256 ECDSA/SHA-256 signatures for Android 14 nodes. The Pixel main-phone approval remains RSA-PSS. The website cannot invent node approvals.
+- The node private keys stay in Android Keystore. UCM validates RSA-PSS/SHA-256 signatures for Android 15+ nodes and P-256 ECDSA/SHA-256 signatures for Android 14 nodes. The main-phone approval remains RSA-PSS. The website cannot invent node approvals.
 - The backend checks that the three public keys differ. It cannot yet cryptographically prove that those keys were generated on three separate physical phones. Enroll the workplace phones under supervision; hardware-backed attestation is a future hardening step.
 - Changing or removing an enrolled main-phone key now requires both the current password and a recent signed main-phone approval for that session. This prevents a stolen password alone from swapping in an attacker's phone. Losing the phone requires the operator procedure below; self-service password-only recovery is deliberately unavailable.
 - Browser permission is granted through the browser's device picker once per node. Browser and device support for Web Bluetooth vary; reconnecting may fail when a phone is off, out of range, or its app is not active.
 - This is a **Bluetooth presence signal**, not an exact indoor position. Signal strength does not locate a person reliably, and Bluetooth relay attacks can make a distant device appear nearby. Rotating challenge IDs stops straightforward replay but does not stop a live relay.
-- The current policy grants office access for up to ten minutes after approval. It does not continuously check that both phones remain present. The account owner currently manages the node list; a separate organization administrator role has not been built.
+- The current policy grants office access for up to ten minutes after approval. It does not continuously check that both nodes remain present. The account owner currently manages the node list; a separate organization administrator role has not been built.
 - An API 36.1 emulator verified signed main-phone approval, signed reset, node enrollment, and Android Bluetooth advertising with a simulated fingerprint. It does not verify real biometric hardware, browser-to-phone Bluetooth contact, two-node quorum on separate devices, or the physical distance at which access stops. Those checks require the actual laptop and three phones.
 
 ## Device acceptance checklist
 
 - A fresh password session cannot read either tiered resource.
 - Main-phone approval opens remote data and leaves office data locked.
-- A request approved by only node A, or only node B, leaves office data locked.
-- The two nodes and main phone together open office data on the same fresh request.
+- A request approved by only one node leaves office data locked, even if that node submits its signature twice.
+- The main phone and any two distinct enrolled nodes together open office data on the same fresh request.
 - A stopped, distant, or revoked node prevents a new office approval. An old office grant remains valid until its short expiry unless revoked.
 - A replayed signature, a signature for the wrong role or request, an expired request, and a copied old session cannot open a resource.
 - Verify the exact server address, TLS certificate, Android permissions, and browser's saved Bluetooth grants before the demonstration.

@@ -32,11 +32,11 @@ export default function ConfidentialPage() {
 
   return <main>
     <div className="heading-row"><div><span className="eyebrow">OFFICE ACCESS</span><h1>Confidential workspace</h1>
-      <p className="muted">Available while your main phone and both workplace tablets have approved this session.</p></div>
+      <p className="muted">Available while your main phone and two distinct trusted nodes have approved this session.</p></div>
       {state === 'ready' && <span className="badge">Office verified</span>}
     </div>
     {state === 'loading' && <section className="panel"><p role="status">Checking office access…</p></section>}
-    {state === 'locked' && <section className="panel"><h2>Office access required</h2><p className="muted">Your office approval has expired or is incomplete. Sign in again and let both workplace tablets approve.</p><div className="panel-actions"><Link className="btn" href="/login">Start a fresh approval</Link><Link className="btn secondary" href="/services">Remote workspace</Link></div></section>}
+    {state === 'locked' && <section className="panel"><h2>Office access required</h2><p className="muted">Your office approval has expired or is incomplete. Sign in again and let two trusted nodes approve.</p><div className="panel-actions"><Link className="btn" href="/login">Start a fresh approval</Link><Link className="btn secondary" href="/services">Remote workspace</Link></div></section>}
     {state === 'error' && <section className="panel"><p className="notice error" role="alert">{message}</p><div className="panel-actions"><button className="btn secondary" onClick={() => void refresh()}>Try again</button></div></section>}
     {state === 'ready' && data && <>
       <section className="panel office-intro"><h2>Office session verified</h2><p>{data.content}</p><span className="office-example">Sample documents for the lab demonstration</span></section>

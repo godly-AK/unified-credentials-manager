@@ -2,7 +2,8 @@ import hashlib
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
-from app.api.dependencies import get_db, require_user, require_session
+from app.api.dependencies import get_db, require_session
+from app.api.routers.trust import require_remote, trust_status
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.password_policy import normalize_password
@@ -48,13 +49,15 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
 @router.get("/me", response_model=WebResponse)
 async def current_user(session: AuthSession = Depends(require_session), db: Session = Depends(get_db)):
     user = db.get(User, session.username)
-    return WebResponse(success=True, message="Authenticated.", data={
-        "username": user.username, "email": user.email, "csrf_token": session.csrf_token,
-        "session_id": session.id, "device_enrolled": bool(user.public_key),
-        "is_monitoring_admin": bool(user.is_admin),
-        "password_change_required": session.client_type == "web_password_change",
-        "device_fingerprint": hashlib.sha256(user.public_key.encode()).hexdigest()[:16] if user.public_key else None,
-    })
+    level = trust_status(db, session)
+    data = {"username": user.username, "csrf_token": session.csrf_token,
+            "device_enrolled": bool(user.public_key), "access_level": level,
+            "password_change_required": session.client_type == "web_password_change"}
+    if level in {"remote", "office"}:
+        data.update({"email": user.email, "session_id": session.id,
+                     "is_monitoring_admin": bool(user.is_admin),
+                     "device_fingerprint": hashlib.sha256(user.public_key.encode()).hexdigest()[:16] if user.public_key else None})
+    return WebResponse(success=True, message="Authenticated." if level != "password" else "Phone approval required.", data=data)
 
 
 @router.post("/logout", response_model=WebResponse)
@@ -67,7 +70,7 @@ async def logout(response: Response, session: AuthSession = Depends(require_sess
 
 
 @router.get("/sessions", response_model=WebResponse)
-async def sessions(current: AuthSession = Depends(require_session), db: Session = Depends(get_db)):
+async def sessions(current: AuthSession = Depends(require_remote), db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     rows = db.query(AuthSession).filter(
         AuthSession.username == current.username, AuthSession.revoked_at.is_(None), AuthSession.expires_at > now,
@@ -81,7 +84,7 @@ async def sessions(current: AuthSession = Depends(require_session), db: Session 
 
 
 @router.delete("/sessions/{session_id}", response_model=WebResponse)
-async def revoke_session(session_id: str, current: AuthSession = Depends(require_session), db: Session = Depends(get_db)):
+async def revoke_session(session_id: str, current: AuthSession = Depends(require_remote), db: Session = Depends(get_db)):
     target = db.query(AuthSession).filter(AuthSession.id == session_id, AuthSession.username == current.username).first()
     if not target:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -110,8 +113,8 @@ async def remove_device(payload: LoginRequest, current: AuthSession = Depends(re
 
 
 @router.get("/security-events", response_model=WebResponse)
-async def security_events(username: str = Depends(require_user), db: Session = Depends(get_db)):
-    rows = db.query(SecurityEvent).filter(SecurityEvent.username == username).order_by(
+async def security_events(current: AuthSession = Depends(require_remote), db: Session = Depends(get_db)):
+    rows = db.query(SecurityEvent).filter(SecurityEvent.username == current.username).order_by(
         SecurityEvent.created_at.desc(), SecurityEvent.id.desc(),
     ).limit(20).all()
     return WebResponse(success=True, message="Security events retrieved.", data={"events": [
@@ -124,8 +127,10 @@ async def security_events(username: str = Depends(require_user), db: Session = D
 @router.post("/password-change", response_model=WebResponse)
 @limiter.limit("5/hour")
 async def change_password(payload: PasswordChangeRequest, request: Request, response: Response,
-                          username: str = Depends(require_user), db: Session = Depends(get_db)):
-    success, data = AuthService.change_password(db, username, payload.current_password, payload.new_password, request_ip(request))
+                          session: AuthSession = Depends(require_session), db: Session = Depends(get_db)):
+    if session.client_type != "web_password_change" and trust_status(db, session) not in {"remote", "office"}:
+        raise HTTPException(status_code=403, detail="Approve this session with your main phone first.")
+    success, data = AuthService.change_password(db, session.username, payload.current_password, payload.new_password, request_ip(request))
     if success:
         response.delete_cookie(settings.session_cookie_name, path="/")
     return WebResponse(success=success, data=data if success else {"reasons": data.get("reasons", [])},

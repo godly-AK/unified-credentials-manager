@@ -14,15 +14,14 @@ type Device = {
   name?: string;
   gatt?: { connect(): Promise<GattServer>; disconnect?(): void };
 };
-type NodeSlot = 'A' | 'B';
 type BrowserBluetooth = {
   getDevices?: () => Promise<Device[]>;
   requestDevice(options: { filters: Array<{ services: string[] }> }): Promise<Device>;
 };
 
-// Use only devices selected for this test. A browser's older Bluetooth grants
-// may refer to tablets that are no longer present or have been re-enrolled.
-const selectedDevices = new Map<NodeSlot, Device>();
+// Contact only devices this account explicitly selected. Browser IDs are opaque,
+// and the backend still decides whether each signing key is enrolled and distinct.
+const selectedDevices = new Map<string, Device>();
 let selectedAccount = '';
 
 function setAccount(username: string): void {
@@ -33,27 +32,22 @@ function setAccount(username: string): void {
 }
 
 function storageKey(username: string): string {
-  return `ucm-workplace-choices-v1:${username}`;
+  return `ucm-workplace-choices-v2:${username}`;
 }
 
-function savedIds(username: string): Partial<Record<NodeSlot, string>> {
+function savedIds(username: string): string[] {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(storageKey(username)) || '{}');
-    if (!value || typeof value !== 'object') return {};
-    const parsed = value as Record<string, unknown>;
-    return {
-      ...(typeof parsed.A === 'string' ? { A: parsed.A } : {}),
-      ...(typeof parsed.B === 'string' ? { B: parsed.B } : {}),
-    };
-  } catch { return {}; }
+    const current: unknown = JSON.parse(localStorage.getItem(storageKey(username)) || 'null');
+    if (Array.isArray(current)) return current.filter((id): id is string => typeof id === 'string');
+    const legacy: unknown = JSON.parse(localStorage.getItem(`ucm-workplace-choices-v1:${username}`) || '{}');
+    if (legacy && typeof legacy === 'object') return Object.values(legacy).filter((id): id is string => typeof id === 'string');
+    return [];
+  } catch { return []; }
 }
 
 function saveIds(username: string): void {
   try {
-    localStorage.setItem(storageKey(username), JSON.stringify({
-      ...savedIds(username),
-      ...Object.fromEntries([...selectedDevices].map(([slot, device]) => [slot, device.id])),
-    }));
+    localStorage.setItem(storageKey(username), JSON.stringify([...new Set([...savedIds(username), ...selectedDevices.keys()])]));
   } catch { /* A private browser window can still use this tab's selections. */ }
 }
 
@@ -70,23 +64,19 @@ export async function restoreWorkplacePhones(username: string): Promise<{ count:
   try {
     const devices = await api.getDevices();
     const ids = savedIds(username);
-    for (const slot of ['A', 'B'] as const) {
-      const device = devices.find(candidate => candidate.id === ids[slot]);
-      if (device) selectedDevices.set(slot, device);
+    for (const id of ids) {
+      const device = devices.find(candidate => candidate.id === id);
+      if (device) selectedDevices.set(id, device);
     }
   } catch { return { count: selectedDevices.size, supported: false }; }
   return { count: selectedDevices.size, supported: true };
 }
 
-export async function grantWorkplacePhone(slot: NodeSlot, username: string): Promise<number> {
+export async function grantWorkplacePhone(username: string): Promise<number> {
   setAccount(username);
   const api = bluetooth();
   const device = await api.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
-  const otherSlot: NodeSlot = slot === 'A' ? 'B' : 'A';
-  if (selectedDevices.get(otherSlot)?.id === device.id) {
-    throw new Error(`This tablet is already selected for node ${otherSlot}. Choose the other tablet for node ${slot}.`);
-  }
-  selectedDevices.set(slot, device);
+  selectedDevices.set(device.id, device);
   saveIds(username);
   return selectedDevices.size;
 }
@@ -112,17 +102,17 @@ export async function sendChallengeToGrantedPhones(
   challengeId: string, username: string, onProgress?: (message: string) => void,
 ): Promise<{ reached: number; granted: number; failures: string[] }> {
   await restoreWorkplacePhones(username);
-  const devices = [...selectedDevices.entries()];
-  if (devices.length === 0) onProgress?.('No saved tablets are available. Select node A and node B once in this browser.');
+  const devices = [...selectedDevices.values()];
+  if (devices.length === 0) onProgress?.('No selected trusted nodes are available. Choose nearby nodes once in this browser.');
   let reached = 0;
   const failures: string[] = [];
-  for (const [slot, device] of devices) {
+  for (const device of devices) {
     let phase = 'connect';
-    onProgress?.(`Connecting to node ${slot}${device.name ? ` (${device.name})` : ''}…`);
+    onProgress?.(`Connecting to trusted node${device.name ? ` (${device.name})` : ''}…`);
     try {
       const server = await connectWithRetry(device);
       phase = 'find service';
-      onProgress?.(`Node ${slot} connected. Finding its request channel…`);
+      onProgress?.('Node connected. Finding its request channel…');
       const service = await server.getPrimaryService(SERVICE_UUID);
       phase = 'find request channel';
       const characteristic = await service.getCharacteristic(REQUEST_UUID);
@@ -138,11 +128,11 @@ export async function sendChallengeToGrantedPhones(
         await characteristic.writeValueWithResponse(request);
       }
       reached += 1;
-      onProgress?.(`Request sent to node ${slot}. Waiting for its signed approval…`);
+      onProgress?.('Request sent to a node. Waiting for its signed approval…');
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Bluetooth connection failed';
-      failures.push(`Node ${slot}${device.name ? ` (${device.name})` : ''}, ${phase}: ${reason}`);
-      onProgress?.(`Node ${slot} could not be contacted: ${reason}`);
+      failures.push(`Node${device.name ? ` (${device.name})` : ''}, ${phase}: ${reason}`);
+      onProgress?.(`A node could not be contacted: ${reason}`);
     } finally {
       device.gatt?.disconnect?.();
     }

@@ -24,14 +24,14 @@ export default function SecurityPage() {
   const [busy, setBusy] = useState(false);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [requiresChange, setRequiresChange] = useState(false);
-  useEffect(() => { void api.get('/api/me').then(response => {
-    setRequiresChange(Boolean(response.data.data?.password_change_required));
-  }).catch(() => {}); }, []);
   const loadEvents = useCallback(async () => {
     try { const response = await api.get('/api/security-events'); setEvents(response.data.data.events); setEventError(''); }
     catch { setEventError('Could not load security activity. Refresh to try again.'); }
   }, []);
-  useEffect(() => { void loadEvents(); }, [loadEvents]);
+  useEffect(() => { void api.get('/api/me').then(response => {
+    setRequiresChange(Boolean(response.data.data?.password_change_required));
+    if (response.data.data?.access_level === 'remote' || response.data.data?.access_level === 'office') void loadEvents();
+  }).catch(() => {}); }, [loadEvents]);
   async function submit(event: FormEvent) {
     event.preventDefault(); setError('');
     if (password !== confirmation) { setError('The new passwords do not match.'); return; }
@@ -62,13 +62,13 @@ export default function SecurityPage() {
             </form>
             <p className="security-info">Changing your password signs out all devices, including this one. Your enrolled recovery key stays available.</p>
           </section>
-          <section className="panel">
+          {!requiresChange && <section className="panel">
             <div className="panel-heading"><div><h2>Recent security activity</h2><p className="muted">Your latest 20 account events.</p></div><button className="btn secondary small" onClick={() => loadEvents()}>Refresh</button></div>
             {eventError && <p className="notice error" role="alert">{eventError}</p>}
             <div className="table-scroll"><table><thead><tr><th>Event</th><th>Address</th><th>Time</th></tr></thead>
               <tbody>{events.map(event => <tr key={event.id}><td><span className="event-name">{names[event.event_type] ?? event.event_type.replaceAll('_', ' ').toLowerCase()}</span>{event.risk_level !== 'LOW' && <div className="hint">Review this event</div>}</td><td>{event.ip_address ?? 'Unknown'}</td><td>{new Date(event.created_at).toLocaleString()}</td></tr>)}</tbody></table></div>
             {events.length === 0 && !eventError && <p className="empty">Your sign-ins and password changes will appear here.</p>}
-          </section>
+          </section>}
         </div>}
     </main>
   );

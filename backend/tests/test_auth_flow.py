@@ -90,6 +90,11 @@ def test_registration_login_and_authenticated_profile(client):
     assert "ucm_session" in response.cookies
     assert "HttpOnly" in response.headers["set-cookie"]
     assert client.get("/api/me").json()["data"]["username"] == "lab_student"
+    assert client.get("/api/me").json()["data"]["access_level"] == "password"
+    assert "email" not in client.get("/api/me").json()["data"]
+    assert client.get("/api/sessions").status_code == 403
+    assert client.get("/api/security-events").status_code == 403
+    assert client.get("/api/example/private").status_code == 403
     assert client.get("/api/me").headers["cache-control"] == "no-store"
 
 
@@ -124,25 +129,30 @@ def test_newly_compromised_password_only_allows_password_change(client, monkeypa
     assert changed.json()["success"]
     assert client.get("/api/me").status_code == 401
     assert login(client, NEW_PASSWORD).json()["success"]
-    assert client.get("/api/example/private").status_code == 200
+    assert client.get("/api/example/private").status_code == 403
     with SessionLocal() as db:
         assert db.query(SecurityEvent).filter(SecurityEvent.event_type == "COMPROMISED_PASSWORD_DETECTED").count() == 2
 
 
 def test_password_change_requires_current_password_and_prevents_reuse(client):
-    register(client); login(client)
+    private = enroll(client)
+    assert client.post("/api/password-change", json={"current_password": PASSWORD, "new_password": NEW_PASSWORD}).status_code == 403
+    approve_phone_for_session(client, private)
     wrong = client.post("/api/password-change", json={"current_password": "incorrect password", "new_password": NEW_PASSWORD})
     assert wrong.json()["success"] is False
     changed = client.post("/api/password-change", json={"current_password": PASSWORD, "new_password": NEW_PASSWORD})
     assert changed.json()["success"]
     assert client.get("/api/me").status_code == 401
     login(client, NEW_PASSWORD)
+    approve_phone_for_session(client, private)
     reused = client.post("/api/password-change", json={"current_password": NEW_PASSWORD, "new_password": PASSWORD})
     assert reused.json()["success"] is False
 
 
 def test_authentication_events_are_recorded(client):
-    register(client); login(client, "incorrect password"); login(client)
+    private = enroll(client)
+    login(client, "incorrect password"); login(client)
+    approve_phone_for_session(client, private)
     names = {row["event_type"] for row in client.get("/api/security-events").json()["data"]["events"]}
     assert {"REGISTRATION_SUCCEEDED", "LOGIN_FAILED", "LOGIN_SUCCEEDED"} <= names
 
@@ -168,9 +178,10 @@ def test_administrator_monitoring_requires_operator_role_and_phone_approval(clie
         assert db.get(User, "lab_student").is_admin is True
     assert client.get("/api/me").status_code == 401  # role change revokes old sessions
     assert login(client).json()["success"]
-    assert client.get("/api/me").json()["data"]["is_monitoring_admin"] is True
+    assert "is_monitoring_admin" not in client.get("/api/me").json()["data"]
     assert client.get("/api/admin/monitoring/summary").status_code == 403
     approve_phone_for_session(client, private)
+    assert client.get("/api/me").json()["data"]["is_monitoring_admin"] is True
     with TestClient(app) as bearer:
         bearer.headers["Authorization"] = "Bearer " + client.cookies.get("ucm_session")
         assert bearer.get("/api/admin/monitoring/summary").status_code == 403
@@ -262,18 +273,20 @@ def test_sessions_store_only_token_hashes(client):
 
 
 def test_password_change_revokes_other_sessions(client):
-    register(client); login(client)
+    private = enroll(client)
     with TestClient(app) as other:
         login(other)
+        approve_phone_for_session(client, private)
         result = client.post("/api/password-change", json={"current_password": PASSWORD, "new_password": NEW_PASSWORD})
         assert result.json()["success"]
         assert other.get("/api/me").status_code == 401
 
 
 def test_session_revocation_and_account_isolation(client):
-    register(client); login(client)
+    private = enroll(client)
     with TestClient(app) as other:
         login(other)
+        approve_phone_for_session(client, private)
         rows = client.get("/api/sessions").json()["data"]["sessions"]
         target = next(row["id"] for row in rows if not row["current"])
         assert client.delete("/api/sessions/" + target).status_code == 200
@@ -282,6 +295,13 @@ def test_session_revocation_and_account_isolation(client):
     with TestClient(app) as stranger:
         login(stranger, username="another_student")
         own_id = client.get("/api/me").json()["data"]["session_id"]
+        stranger_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        stranger_pem = stranger_key.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+        assert stranger.post("/api/app/store-public-key", json={
+            "username": "another_student", "public_key_pem": stranger_pem,
+            "current_password": PASSWORD}).status_code == 200
+        approve_phone_for_session(stranger, stranger_key)
         assert stranger.delete("/api/sessions/" + own_id).status_code == 404
 
 
@@ -434,6 +454,7 @@ def test_tiered_access_requires_phone_and_two_distinct_nodes(client, monkeypatch
     assert client.get("/api/data/remote").status_code == 403
     assert client.get("/api/data/office").status_code == 403
 
+    approve_phone_for_session(client, phone)
 
     unsupported = ec.generate_private_key(ec.SECP384R1())
     assert client.post("/api/trust/nodes", json={"slot": "A", "label": "Wrong curve",
@@ -473,6 +494,39 @@ def test_tiered_access_requires_phone_and_two_distinct_nodes(client, monkeypatch
     assert client.get("/api/data/remote").status_code == 403
 
 
+def test_any_two_of_three_trusted_nodes_can_open_office(client, monkeypatch):
+    monkeypatch.setattr(settings, "office_trust_enabled", True)
+    phone = enroll(client)
+    approve_phone_for_session(client, phone)
+    nodes = []
+    for index in range(3):
+        ticket_response = client.post("/api/trust/nodes/ticket", json={
+            "label": f"Trusted node {index + 1}", "current_password": PASSWORD})
+        assert ticket_response.status_code == 200, ticket_response.text
+        key = ec.generate_private_key(ec.SECP256R1())
+        public_key = key.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+        claimed = client.post("/api/trust/nodes/claim", json={
+            "ticket": ticket_response.json()["ticket"], "public_key_pem": public_key})
+        assert claimed.status_code == 200, claimed.text
+        nodes.append((claimed.json()["id"], claimed.json()["slot"], key))
+    assert len({slot for _, slot, _ in nodes}) == 3
+    approve_phone_for_session(client, phone)
+    challenge_id = client.get("/api/trust/status").json()["challenge"]["id"]
+    nonce = client.get("/api/trust/challenge/" + challenge_id).json()["nonce"]
+    for position, (node_id, slot, key) in enumerate((nodes[0], nodes[2])):
+        payload = f"UCM:login-trust:v1\nnode-{slot}\n{challenge_id}\n{nonce}".encode()
+        signature = base64.b64encode(key.sign(payload, ec.ECDSA(hashes.SHA256()))).decode()
+        approved = client.post("/api/trust/node-approve", json={
+            "challenge_id": challenge_id, "node_id": node_id, "signature_b64": signature})
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["level"] == ("remote" if position == 0 else "office")
+        assert client.get("/api/trust/status").json()["challenge"]["approved_node_count"] == position + 1
+        assert client.post("/api/trust/node-approve", json={
+            "challenge_id": challenge_id, "node_id": node_id, "signature_b64": signature}).status_code == 409
+    assert client.get("/api/data/office").status_code == 200
+
+
 def test_short_request_code_resolves_and_new_request_clears_old_access(client):
     phone = enroll(client)
     first = client.post("/api/trust/start", json={}).json()
@@ -500,6 +554,7 @@ def test_short_request_code_resolves_and_new_request_clears_old_access(client):
 def test_operator_revocation_clears_office_access_and_pending_enrollment(client, monkeypatch):
     monkeypatch.setattr(settings, "office_trust_enabled", True)
     phone = enroll(client)
+    approve_phone_for_session(client, phone)
     ticket = client.post("/api/trust/nodes/ticket", json={
         "slot": "A", "label": "Front desk", "current_password": PASSWORD,
     }).json()["ticket"]
@@ -565,6 +620,7 @@ def test_expired_login_challenge_and_trust_grant(client):
 
 def test_node_enrollment_code_is_one_time_and_role_keys_are_distinct(client):
     phone = enroll(client)
+    approve_phone_for_session(client, phone)
     phone_pem = phone.public_key().public_bytes(serialization.Encoding.PEM,
                                                 serialization.PublicFormat.SubjectPublicKeyInfo).decode()
     created = client.post("/api/trust/nodes/ticket", json={

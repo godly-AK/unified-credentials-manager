@@ -31,7 +31,7 @@ flowchart LR
 
 The web portal uses Next.js; FastAPI and SQLAlchemy implement the API and persistence; Alembic versions the schema. The active Android client is Kotlin/Jetpack Compose in Android Studio. Flutter remains a historical prototype. The portal defaults to same-origin `/api` requests, allowing one HTTPS address for the website and phones. The self-hosted deployment design uses Caddy as its HTTPS entry point; the temporary physical lab can use an ngrok tunnel. No external identity provider participates in UCM's credential check or signature decision.
 
-The Pixel main phone uses its Android 15+ biometric-gated RSA-PSS Keystore key. To include an Android 14 Samsung workplace tablet, the node client now generates a P-256 ECDSA/SHA-256 Keystore key on API 34. The backend accepts that key only for workplace-node approval; the main-phone recovery and approval profile remains RSA-PSS. Backend mixed-node tests and the APK build pass, but the Android 14 tablet runtime and physical Bluetooth contact are not yet verified.
+The main phone uses its Android 15+ biometric-gated RSA-PSS Keystore key. An Android 14 trusted node generates a P-256 ECDSA/SHA-256 Keystore key. The backend accepts that key only for node approval; the main-phone recovery and approval profile remains RSA-PSS. Backend mixed-node tests and the APK build pass, but physical two-node Bluetooth contact is not yet verified.
 
 ## Security controls implemented
 

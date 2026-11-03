@@ -12,13 +12,16 @@ import app.db.models  # noqa: F401 - populate Base.metadata
 INITIAL_REVISION = "02ab954e12a1"
 
 
-def validate_existing_schema(*, initial: bool = False, previous_head: bool = False) -> None:
+def validate_existing_schema(*, initial: bool = False, previous_head: bool = False,
+                             pre_node_quorum: bool = False) -> None:
     inspector = inspect(engine)
     actual_tables = {name for name in inspector.get_table_names()
                      if not name.startswith("sqlite_") and name != "alembic_version"}
     expected_tables = set(Base.metadata.tables)
     if initial:
         expected_tables.remove("security_alert_reviews")
+    if initial or previous_head or pre_node_quorum:
+        expected_tables.remove("login_node_approvals")
     missing = expected_tables - actual_tables
     extra = actual_tables - expected_tables
     if missing or extra:
@@ -76,12 +79,17 @@ def upgrade() -> None:
             validate_existing_schema()
         except RuntimeError:
             try:
-                validate_existing_schema(previous_head=True)
+                validate_existing_schema(pre_node_quorum=True)
             except RuntimeError:
-                validate_existing_schema(initial=True)
-                command.stamp(config, INITIAL_REVISION)
+                try:
+                    validate_existing_schema(previous_head=True)
+                except RuntimeError:
+                    validate_existing_schema(initial=True)
+                    command.stamp(config, INITIAL_REVISION)
+                else:
+                    command.stamp(config, "b7e942d0c531")
             else:
-                command.stamp(config, "b7e942d0c531")
+                command.stamp(config, "c1d64a8f29b0")
         else:
             command.stamp(config, "head")
         command.upgrade(config, "head")

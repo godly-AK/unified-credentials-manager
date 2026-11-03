@@ -46,7 +46,7 @@ class WorkplaceBleServer(
     private val advertiser get() = manager.adapter.bluetoothLeAdvertiser
     private val advertising = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-            scope.launch { onStatus("Workplace node $slot is advertising. Keep this screen open.") }
+            scope.launch { onStatus("Trusted node is advertising. Keep this screen open.") }
         }
         override fun onStartFailure(errorCode: Int) {
             scope.launch { onStatus("Bluetooth advertising failed: $errorCode") }
@@ -76,7 +76,7 @@ class WorkplaceBleServer(
             if (responseNeeded) gatt?.sendResponse(device, requestId,
                 if (valid) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH, offset, null)
             if (!valid) return
-            scope.launch { onStatus("Workplace node $slot received a Bluetooth request. Checking UCM…") }
+            scope.launch { onStatus("Trusted node received a Bluetooth request. Checking UCM…") }
             val input = ByteBuffer.wrap(value)
             val id = UUID(input.long, input.long).toString()
             scope.launch {
@@ -87,7 +87,7 @@ class WorkplaceBleServer(
                     api.request("/api/trust/node-approve", JSONObject()
                         .put("challenge_id", id).put("node_id", nodeId)
                         .put("signature_b64", Base64.getEncoder().encodeToString(signature)))
-                    onStatus("Workplace node $slot approved request $id")
+                    onStatus("Trusted node approved request $id")
                 } catch (error: Exception) { onStatus(error.message ?: "Could not approve request.") }
             }
         }
@@ -110,7 +110,7 @@ class WorkplaceBleServer(
         service.addCharacteristic(request)
         gatt = server
         check(server.addService(service)) { "Cannot publish Bluetooth service." }
-        onStatus("Starting workplace node $slot. Keep this screen open.")
+        onStatus("Starting trusted node. Keep this screen open.")
     }
 
     @SuppressLint("MissingPermission")

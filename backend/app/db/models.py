@@ -128,6 +128,13 @@ class LoginTrustChallenge(Base):
     node_b_approved_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
 
+class LoginNodeApproval(Base):
+    __tablename__ = "login_node_approvals"
+    challenge_id = Column(String, ForeignKey("login_trust_challenges.id", ondelete="CASCADE"), primary_key=True)
+    node_id = Column(String, ForeignKey("workplace_nodes.id", ondelete="CASCADE"), primary_key=True)
+    approved_at = Column(TIMESTAMP(timezone=True), nullable=False)
+
+
 class SessionTrust(Base):
     __tablename__ = "session_trust"
     session_id = Column(String, ForeignKey("auth_sessions.id", ondelete="CASCADE"), primary_key=True)

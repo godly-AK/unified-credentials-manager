@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.password_policy import normalize_password
 from app.core.security import verify_password
-from app.db.models import AuthSession, LoginTrustChallenge, NodeEnrollmentTicket, SessionTrust, User, WorkplaceNode
+from app.db.models import AuthSession, LoginNodeApproval, LoginTrustChallenge, NodeEnrollmentTicket, SessionTrust, User, WorkplaceNode
 from app.services.audit_service import record_security_event
 from app.services.session_service import utc
 from app.services.workplace_nodes import revoke_workplace_node
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/trust", tags=["Trust levels"])
 
 
 class NodeEnrollment(BaseModel):
-    slot: str = Field(pattern="^[AB]$")
+    slot: str | None = Field(default=None, pattern="^[AB]$")
     label: str = Field(min_length=2, max_length=60)
     public_key_pem: str = Field(max_length=4096)
     current_password: str = Field(max_length=1024)
@@ -37,7 +37,8 @@ class CurrentPassword(BaseModel):
 
 
 class NodeTicketRequest(BaseModel):
-    slot: str = Field(pattern="^[AB]$")
+    # Old clients may still supply A/B. New enrollment assigns an internal role.
+    slot: str | None = Field(default=None, pattern="^[AB]$")
     label: str = Field(min_length=2, max_length=60)
     current_password: str = Field(max_length=1024)
 
@@ -124,7 +125,12 @@ def trust_status(db: Session, session: AuthSession) -> str:
 
 def update_trust(db: Session, challenge: LoginTrustChallenge, request: Request) -> str:
     now = datetime.now(timezone.utc)
-    level = ("office" if challenge.phone_approved_at and challenge.node_a_approved_at and challenge.node_b_approved_at
+    approved_count = db.query(LoginNodeApproval).join(WorkplaceNode, LoginNodeApproval.node_id == WorkplaceNode.id).filter(
+        LoginNodeApproval.challenge_id == challenge.id,
+        WorkplaceNode.username == challenge.username,
+        WorkplaceNode.revoked_at.is_(None),
+    ).count()
+    level = ("office" if challenge.phone_approved_at and approved_count >= 2
              else "remote" if challenge.phone_approved_at else "password")
     if level != "password":
         record = db.get(SessionTrust, challenge.session_id)
@@ -147,7 +153,7 @@ def require_remote(session: AuthSession = Depends(require_session), db: Session 
 
 def require_office(session: AuthSession = Depends(require_session), db: Session = Depends(get_db)) -> AuthSession:
     if not settings.office_trust_enabled or trust_status(db, session) != "office":
-        raise HTTPException(status_code=403, detail="Both registered workplace nodes must approve this login.")
+        raise HTTPException(status_code=403, detail="Two distinct trusted nodes must approve this login.")
     return session
 
 
@@ -158,6 +164,9 @@ def status(session: AuthSession = Depends(require_session), db: Session = Depend
         LoginTrustChallenge.created_at.desc()).first()
     nodes = db.query(WorkplaceNode).filter(WorkplaceNode.username == session.username,
                                            WorkplaceNode.revoked_at.is_(None)).all()
+    approved_node_ids = ([row.node_id for row in db.query(LoginNodeApproval).filter(
+        LoginNodeApproval.challenge_id == challenge.id).all()]
+        if challenge and utc(challenge.expires_at) > now else [])
     user = db.get(User, session.username)
     return {"username": session.username, "level": trust_status(db, session), "phone_enrolled": bool(user.public_key),
             "office_trust_enabled": settings.office_trust_enabled,
@@ -166,7 +175,9 @@ def status(session: AuthSession = Depends(require_session), db: Session = Depend
                            "expires_at": utc(challenge.expires_at).isoformat(),
                            "phone": bool(challenge.phone_approved_at),
                            "node_a": bool(challenge.node_a_approved_at),
-                           "node_b": bool(challenge.node_b_approved_at)}
+                           "node_b": bool(challenge.node_b_approved_at),
+                           "approved_node_ids": approved_node_ids,
+                           "approved_node_count": len(approved_node_ids)}
                           if challenge and utc(challenge.expires_at) > now else None)}
 
 
@@ -257,20 +268,23 @@ def node_approve(payload: SignedNodeApproval, request: Request, db: Session = De
     node = db.get(WorkplaceNode, payload.node_id)
     if not node or node.username != challenge.username or node.revoked_at:
         raise HTTPException(status_code=403, detail="This workplace node is not registered.")
-    field = "node_a_approved_at" if node.slot == "A" else "node_b_approved_at"
-    if getattr(challenge, field):
+    if db.get(LoginNodeApproval, (challenge.id, node.id)):
         raise HTTPException(status_code=409, detail="This node has already approved.")
     verify_node(node.public_key, payload.signature_b64, message(challenge, "node-" + node.slot))
-    setattr(challenge, field, datetime.now(timezone.utc))
+    approved_at = datetime.now(timezone.utc)
+    db.add(LoginNodeApproval(challenge_id=challenge.id, node_id=node.id, approved_at=approved_at))
+    db.flush()
+    if node.slot in {"A", "B"}:
+        setattr(challenge, "node_a_approved_at" if node.slot == "A" else "node_b_approved_at", approved_at)
     record_security_event(db, event_type="TRUST_NODE_APPROVED", username=challenge.username,
                           ip_address=request.client.host if request.client else None,
-                          details={"request_id": challenge.id, "slot": node.slot})
+                          details={"request_id": challenge.id, "node_id": node.id})
     return {"level": update_trust(db, challenge, request)}
 
 
 @router.post("/nodes")
 @limiter.limit("5/hour")
-def enroll_node(payload: NodeEnrollment, request: Request, session: AuthSession = Depends(require_session),
+def enroll_node(payload: NodeEnrollment, request: Request, session: AuthSession = Depends(require_remote),
                 db: Session = Depends(get_db)):
     user = db.get(User, session.username)
     if not verify_password(normalize_password(payload.current_password), user.password_hash).valid:
@@ -279,14 +293,15 @@ def enroll_node(payload: NodeEnrollment, request: Request, session: AuthSession 
         identity = key_identity(payload.public_key_pem, allow_ec=True)
     except Exception:
         raise HTTPException(status_code=400, detail="Use an RSA 2048–4096 or P-256 workplace public key.")
+    slot = payload.slot or "n" + secrets.token_hex(8)
     old = db.query(WorkplaceNode).filter(WorkplaceNode.username == session.username,
-                                         WorkplaceNode.slot == payload.slot,
+                                         WorkplaceNode.slot == slot,
                                          WorkplaceNode.revoked_at.is_(None)).first()
     if old:
-        raise HTTPException(status_code=409, detail="Revoke the existing node in this slot first.")
+        raise HTTPException(status_code=409, detail="This internal node role is already in use. Try again.")
     if key_already_enrolled(db, session.username, identity):
         raise HTTPException(status_code=409, detail="Each role needs a different device key.")
-    node = WorkplaceNode(id=str(uuid.uuid4()), username=session.username, slot=payload.slot,
+    node = WorkplaceNode(id=str(uuid.uuid4()), username=session.username, slot=slot,
                          label=payload.label, public_key=payload.public_key_pem,
                          created_at=datetime.now(timezone.utc))
     db.add(node)
@@ -299,18 +314,19 @@ def enroll_node(payload: NodeEnrollment, request: Request, session: AuthSession 
 @router.post("/nodes/ticket")
 @limiter.limit("5/hour")
 def create_node_ticket(payload: NodeTicketRequest, request: Request,
-                       session: AuthSession = Depends(require_session), db: Session = Depends(get_db)):
+                       session: AuthSession = Depends(require_remote), db: Session = Depends(get_db)):
     user = db.get(User, session.username)
     if not verify_password(normalize_password(payload.current_password), user.password_hash).valid:
         raise HTTPException(status_code=403, detail="Current password is incorrect.")
+    slot = payload.slot or "n" + secrets.token_hex(8)
     existing = db.query(WorkplaceNode).filter(WorkplaceNode.username == session.username,
-                                              WorkplaceNode.slot == payload.slot,
+                                              WorkplaceNode.slot == slot,
                                               WorkplaceNode.revoked_at.is_(None)).first()
     if existing:
-        raise HTTPException(status_code=409, detail="Revoke the existing node in this slot first.")
+        raise HTTPException(status_code=409, detail="This internal node role is already in use. Try again.")
     ticket = secrets.token_urlsafe(12)
     db.add(NodeEnrollmentTicket(token_hash=hashlib.sha256(ticket.encode()).hexdigest(),
-                                username=session.username, slot=payload.slot, label=payload.label,
+                                username=session.username, slot=slot, label=payload.label,
                                 expires_at=datetime.now(timezone.utc) + timedelta(minutes=5)))
     db.commit()
     return {"ticket": ticket, "expires_in_seconds": 300,
@@ -354,7 +370,7 @@ def claim_node_ticket(payload: NodeTicketClaim, request: Request, db: Session = 
 
 @router.delete("/nodes/{node_id}")
 def revoke_node(node_id: str, payload: CurrentPassword, request: Request,
-                session: AuthSession = Depends(require_session), db: Session = Depends(get_db)):
+                session: AuthSession = Depends(require_remote), db: Session = Depends(get_db)):
     user = db.get(User, session.username)
     if not verify_password(normalize_password(payload.current_password), user.password_hash).valid:
         raise HTTPException(status_code=403, detail="Current password is incorrect.")

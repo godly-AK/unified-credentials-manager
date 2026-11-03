@@ -7,12 +7,11 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.http_security import HttpSecurityMiddleware
 from app.api.routers import admin_monitoring, auth, mobile, trust
-from app.api.dependencies import require_user
 
 app = FastAPI(
     title="Unified Credentials Manager",
     description="Self-hosted authentication and credential-security framework.",
-    version="0.4.0",
+    version="0.5.0",
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -42,8 +41,8 @@ def health():
 
 
 @app.get("/api/example/private", tags=["Integration example"])
-def example_private_resource(username: str = Depends(require_user)):
-    return {"username": username, "content": "Private lab notes: this response was released only after UCM validated your active session."}
+def example_private_resource(session=Depends(trust.require_remote)):
+    return {"username": session.username, "content": "Private lab notes: this response was released only after UCM validated your main-phone approval."}
 
 
 @app.get("/api/data/remote", tags=["Trust levels"])
@@ -55,7 +54,7 @@ def remote_data(session=Depends(trust.require_remote)):
 def office_data(session=Depends(trust.require_office)):
     return {
         "level": "office",
-        "content": "This office workspace is available only while the main phone and both workplace nodes have approved this login.",
+        "content": "This office workspace is available only while the main phone and two distinct trusted nodes have approved this login.",
         "documents": [
             {"title": "Security operations brief", "category": "Internal", "summary": "A demonstration brief for the protected office workspace."},
             {"title": "Facility access procedure", "category": "Restricted", "summary": "A demonstration procedure shared only after the workplace check."},

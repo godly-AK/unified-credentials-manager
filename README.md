@@ -15,7 +15,7 @@ UCM is a self-hosted authentication service and reusable account portal. Website
 - Cross-account administrator monitoring with event filters, high-risk alert reviews, a phone-approval step, and operator-only role grants. It reads the audit database even when Elasticsearch is offline; the local Kibana dashboard remains an optional lab view.
 - Five-minute RSA-PSS recovery challenges signed over both nonce and new-password digest, with conditional one-time consumption.
 - Native Kotlin/Compose enrollment, biometric signing, main-phone login approval, and workplace-node Bluetooth witness client. Main-phone approval, password reset, and node advertising passed on an API 36.1 emulator; the three-phone physical rehearsal remains.
-- Tiered backend authorization: password session, main-phone remote access, and main phone plus two workplace nodes for office data. Office enforcement stays disabled until physical Bluetooth testing succeeds.
+- Tiered backend authorization: a password starts a pending approval session but cannot open account pages; main-phone approval opens remote access; any two distinct trusted nodes can raise that session to office access. Office enforcement stays disabled outside the isolated phone lab until physical Bluetooth testing succeeds.
 - [Sign-in page](frontend/src/app/login/page.tsx) showing the approval code, live steps, and automatic workplace check; a [workplace devices page](frontend/src/app/services/pipeline/page.tsx) for enrollment and diagnostics, and an [office-only confidential workspace](frontend/src/app/services/confidential/page.tsx).
 - A clear, responsive portal and independent sample website.
 - A reusable FastAPI dependency and independent backend example that protects its own data by validating the UCM session on each request; sign-out revokes access there immediately.
@@ -73,7 +73,7 @@ Back up any existing database before upgrading. A database that already matches 
 A known two- or four-table pre-Alembic database can be copied into a fresh migrated database with the [legacy importer](docs/MIGRATIONS.md). A four-table PostgreSQL lab copy has been rehearsed. Old session and push tokens are intentionally discarded.
 
 ## Native Android
-Open [android-native](android-native/README.md) in Android Studio. The main-phone role requires Android 15/API 35+ and a strong biometric. Workplace-node mode supports Android 14/API 34+ through a Keystore P-256 signing key; physical tablet testing remains. SDK 36 is used for compilation. The original Flutter client remains a reference.
+Open [android-native](android-native/README.md) in Android Studio. The main-phone role requires Android 15/API 35+ and a strong biometric. Trusted-node mode supports Android 14/API 34+ through a Keystore P-256 signing key; physical multi-node testing remains. SDK 36 is used for compilation. The original Flutter client remains a reference.
 
 For the eventual three-phone test, use the [isolated HTTPS phone-lab runbook](docs/PHONE_LAB.md). The normal localhost demo and its database remain separate. For a self-hosted domain, see the [HTTPS deployment starting point](docs/DEPLOYMENT.md).
 
