@@ -2,7 +2,9 @@ const SERVICE_UUID = 'b15a0a00-571d-4a73-95de-6d660c00b001';
 const REQUEST_UUID = 'b15a0a01-571d-4a73-95de-6d660c00b001';
 
 type Characteristic = {
+  properties?: { writeWithoutResponse?: boolean };
   writeValueWithResponse(value: BufferSource): Promise<void>;
+  writeValueWithoutResponse?: (value: BufferSource) => Promise<void>;
 };
 type GattServer = { getPrimaryService(uuid: string): Promise<{
   getCharacteristic(uuid: string): Promise<Characteristic>;
@@ -68,8 +70,16 @@ export async function sendChallengeToGrantedPhones(challengeId: string): Promise
       phase = 'find request channel';
       const characteristic = await service.getCharacteristic(REQUEST_UUID);
       const bytes = uuidBytes(challengeId);
-      phase = 'send request';
-      await characteristic.writeValueWithResponse(bytes.buffer.slice(0) as ArrayBuffer);
+      const request = bytes.buffer.slice(0) as ArrayBuffer;
+      if (characteristic.properties?.writeWithoutResponse && characteristic.writeValueWithoutResponse) {
+        phase = 'send request without response';
+        await characteristic.writeValueWithoutResponse(request);
+        // Give the BLE stack time to transmit before releasing the connection.
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } else {
+        phase = 'send request with response';
+        await characteristic.writeValueWithResponse(request);
+      }
       reached += 1;
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Bluetooth connection failed';

@@ -76,6 +76,7 @@ class WorkplaceBleServer(
             if (responseNeeded) gatt?.sendResponse(device, requestId,
                 if (valid) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH, offset, null)
             if (!valid) return
+            scope.launch { onStatus("Workplace node $slot received a Bluetooth request. Checking UCM…") }
             val input = ByteBuffer.wrap(value)
             val id = UUID(input.long, input.long).toString()
             scope.launch {
@@ -104,7 +105,7 @@ class WorkplaceBleServer(
         val server = manager.openGattServer(activity, callback) ?: error("Cannot open Bluetooth service.")
         val service = BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
         val request = BluetoothGattCharacteristic(REQUEST_UUID,
-            BluetoothGattCharacteristic.PROPERTY_WRITE,
+            BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
             BluetoothGattCharacteristic.PERMISSION_WRITE)
         service.addCharacteristic(request)
         gatt = server

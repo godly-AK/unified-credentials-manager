@@ -2,7 +2,7 @@
 The Android Studio/Kotlin client includes enrollment, password reset, main-phone login approval, and workplace-node Bluetooth witness mode. Flutter remains a historical reference.
 
 ## Requirements
-The **main phone** needs Android 15/API 35 or newer and an enrolled strong biometric. A **workplace node** can run Android 14/API 34 or newer if it supports Bluetooth LE advertising. Android SDK 36, Gradle 8.13, AGP 8.13.2, and Android Studio's bundled JDK are used for compilation. The main phone keeps the explicit SHA-256 MGF1 policy available from API 35; Android 14 nodes use a Keystore P-256 ECDSA/SHA-256 key instead.
+The **main phone** needs Android 15/API 35 or newer and an enrolled strong biometric. A **workplace node** can run Android 14/API 34 or newer if it supports Bluetooth LE advertising. Android SDK 36, Gradle 8.13, AGP 8.13.2, and Android Studio's bundled JDK are used for compilation. The main phone keeps the explicit SHA-256 MGF1 policy available from API 35; Android 14 nodes use a Keystore P-256 ECDSA/SHA-256 key instead. The debug build pre-fills the current phone-lab ngrok address and `progress_demo`; edit those fields if your test origin or account differs. Release builds leave both blank.
 
 ## Flows
 **Enroll phone:** enter the UCM server, username, and current password. The app signs in, generates/reuses an account-and-server-specific 2048-bit Keystore key, stores its public key through the authenticated enrollment API, and signs out the temporary bearer session.

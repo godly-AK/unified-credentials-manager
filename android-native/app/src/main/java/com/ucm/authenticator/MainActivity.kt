@@ -90,8 +90,8 @@ class MainActivity : FragmentActivity() {
 
 @Composable
 private fun AuthenticatorScreen(activity: MainActivity) {
-    var server by rememberSaveable { mutableStateOf(if (BuildConfig.DEBUG) "http://10.0.2.2:8000" else "") }
-    var username by rememberSaveable { mutableStateOf("") }
+    var server by rememberSaveable { mutableStateOf(if (BuildConfig.DEBUG) "https://heterostyled-charitably-raelynn.ngrok-free.dev" else "") }
+    var username by rememberSaveable { mutableStateOf(if (BuildConfig.DEBUG) "progress_demo" else "") }
     var password by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }

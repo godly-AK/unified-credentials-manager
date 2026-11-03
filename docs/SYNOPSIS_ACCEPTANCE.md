@@ -24,7 +24,7 @@ The synopsis names Elasticsearch and Kibana; UCM uses a Python exporter rather t
 - Authenticated ZAP API requestor: **10 routes**, zero passive alerts; disposable session revoked.
 - Android: Android 14 compatible debug APK build, lint, and three JVM tests passed with Android Studio JDK 21. Its minimum SDK is API 34 and the debug signature verifies with APK Signature Scheme v2.
 - Live ngrok phone-lab origin: 19 HTTPS HTTP security checks passed, including a Secure session cookie and rejection of missing CSRF and foreign-origin writes. The new APK download returned HTTP 200 with the expected size. No physical device was connected.
-- Testing APK: [UCM-lab-debug-android14-2026-11-03.apk](../output/UCM-lab-debug-android14-2026-11-03.apk), SHA-256 `030eb311a4cab7de4f6c0cf86963dc1e4dac1f99f9d9e6e963ee1719b59f9c17`. The main phone requires Android 15/API 35 or newer for biometric signing; workplace nodes support Android 14/API 34 or newer.
+- Testing APK: [UCM-lab-debug-android14-2026-11-03.apk](../output/UCM-lab-debug-android14-2026-11-03.apk), version 0.3.0, SHA-256 `ffeb01841ddb9eddc8638c0cd561c314e5cd0a2ddd3be6eeedce4ceda60f07f1`. The main phone requires Android 15/API 35 or newer for biometric signing; workplace nodes support Android 14/API 34 or newer. Its alternative Bluetooth write path is built and locally checked but awaits physical validation.
 
 ## Acceptance still requiring external conditions
 

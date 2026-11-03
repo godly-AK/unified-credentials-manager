@@ -10,8 +10,8 @@ type Status = { level: 'password' | 'remote' | 'office'; phone_enrolled: boolean
 type BluetoothResult = { reached: number; granted: number; failures: string[] };
 
 function bluetoothSummary(result: BluetoothResult): string {
-  const count = `${result.reached} of ${result.granted} workplace phones reached`;
-  return result.failures.length ? `${count}. ${result.failures.join(' | ')}` : `${count}. Their signed reports go directly to UCM.`;
+  const count = `${result.reached} of ${result.granted} Bluetooth requests sent`;
+  return result.failures.length ? `${count}. ${result.failures.join(' | ')}` : `${count}. Check the node approvals below; their signed reports go directly to UCM.`;
 }
 
 export default function PipelinePage() {
