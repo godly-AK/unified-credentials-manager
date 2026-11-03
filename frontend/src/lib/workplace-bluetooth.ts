@@ -12,12 +12,11 @@ type Device = {
   }> }> };
 };
 type BrowserBluetooth = {
-  getDevices?: () => Promise<Device[]>;
   requestDevice(options: { filters: Array<{ services: string[] }> }): Promise<Device>;
 };
 
-// Some Web Bluetooth browsers support the chooser but not getDevices(). Keep
-// selected devices for the lifetime of this tab so both nodes can be contacted.
+// Use only devices selected for this test. A browser's older Bluetooth grants
+// may refer to tablets that are no longer present or have been re-enrolled.
 const selectedDevices = new Map<string, Device>();
 
 function bluetooth(): BrowserBluetooth {
@@ -26,22 +25,11 @@ function bluetooth(): BrowserBluetooth {
   return available;
 }
 
-async function grantedDevices(api: BrowserBluetooth): Promise<Device[]> {
-  if (typeof api.getDevices === 'function') {
-    try {
-      for (const device of await api.getDevices()) selectedDevices.set(device.id, device);
-    } catch {
-      // The devices selected in this tab can still be used.
-    }
-  }
-  return [...selectedDevices.values()];
-}
-
-export async function grantWorkplacePhone(): Promise<{ count: number; retainedAfterReload: boolean }> {
+export async function grantWorkplacePhone(): Promise<number> {
   const api = bluetooth();
   const device = await api.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
   selectedDevices.set(device.id, device);
-  return { count: (await grantedDevices(api)).length, retainedAfterReload: typeof api.getDevices === 'function' };
+  return selectedDevices.size;
 }
 
 function uuidBytes(value: string): Uint8Array {
@@ -50,21 +38,23 @@ function uuidBytes(value: string): Uint8Array {
   return new Uint8Array(hex.match(/.{2}/g)!.map(pair => parseInt(pair, 16)));
 }
 
-export async function sendChallengeToGrantedPhones(challengeId: string): Promise<{ reached: number; granted: number }> {
-  const devices = await grantedDevices(bluetooth());
+export async function sendChallengeToGrantedPhones(challengeId: string): Promise<{ reached: number; granted: number; failures: string[] }> {
+  const devices = [...selectedDevices.values()];
   let reached = 0;
-  for (const device of devices) {
+  const failures: string[] = [];
+  for (const [index, device] of devices.entries()) {
     try {
       const server = await device.gatt?.connect();
-      if (!server) continue;
+      if (!server) throw new Error('Bluetooth connection is unavailable');
       const service = await server.getPrimaryService(SERVICE_UUID);
       const characteristic = await service.getCharacteristic(REQUEST_UUID);
       const bytes = uuidBytes(challengeId);
       await characteristic.writeValueWithResponse(bytes.buffer.slice(0) as ArrayBuffer);
       reached += 1;
-    } catch {
-      // Previously granted devices can be switched off or out of range.
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Bluetooth connection failed';
+      failures.push(`Phone ${index + 1}${device.name ? ` (${device.name})` : ''}: ${reason}`);
     }
   }
-  return { reached, granted: devices.length };
+  return { reached, granted: devices.length, failures };
 }

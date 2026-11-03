@@ -7,6 +7,12 @@ import { grantWorkplacePhone, sendChallengeToGrantedPhones } from '@/lib/workpla
 type Node = { id: string; slot: 'A' | 'B'; label: string };
 type Challenge = { id: string; expires_at: string; phone: boolean; node_a: boolean; node_b: boolean };
 type Status = { level: 'password' | 'remote' | 'office'; phone_enrolled: boolean; office_trust_enabled: boolean; nodes: Node[]; challenge: Challenge | null };
+type BluetoothResult = { reached: number; granted: number; failures: string[] };
+
+function bluetoothSummary(result: BluetoothResult): string {
+  const count = `${result.reached} of ${result.granted} workplace phones reached`;
+  return result.failures.length ? `${count}. ${result.failures.join(' | ')}` : `${count}. Their signed reports go directly to UCM.`;
+}
 
 export default function PipelinePage() {
   const [status, setStatus] = useState<Status>();
@@ -45,7 +51,7 @@ export default function PipelinePage() {
       await refresh();
       if (status?.office_trust_enabled) {
         const result = await sendChallengeToGrantedPhones(response.data.challenge_id);
-        setBluetoothMessage(`${result.reached} of ${result.granted} previously permitted workplace phones reached. Their signed reports go directly to UCM.`);
+        setBluetoothMessage(bluetoothSummary(result));
       }
     }
     catch (failure) { setError(getApiError(failure, 'Could not start approval.')); }
@@ -55,8 +61,8 @@ export default function PipelinePage() {
   async function grant() {
     setBusy('bluetooth'); setError('');
     try {
-      const result = await grantWorkplacePhone();
-      setBluetoothMessage(`${result.count} workplace phone${result.count === 1 ? '' : 's'} ready. ${result.retainedAfterReload ? 'Repeat for the other phone if needed.' : 'Keep this tab open; grant both phones again if you reload it.'}`);
+      const count = await grantWorkplacePhone();
+      setBluetoothMessage(`${count} workplace phone${count === 1 ? '' : 's'} ready in this tab. Keep this tab open; grant both phones again if you reload it.`);
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not connect to the workplace phone.'); }
     finally { setBusy(''); }
   }
@@ -66,7 +72,7 @@ export default function PipelinePage() {
     setBusy('bluetooth'); setError('');
     try {
       const result = await sendChallengeToGrantedPhones(status.challenge.id);
-      setBluetoothMessage(`${result.reached} of ${result.granted} previously permitted workplace phones reached. Their signed reports go directly to UCM.`);
+      setBluetoothMessage(bluetoothSummary(result));
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not contact workplace phones.'); }
     finally { setBusy(''); }
   }
@@ -107,7 +113,7 @@ export default function PipelinePage() {
     {!status?.phone_enrolled && <p className="notice" style={{ marginTop: 18 }}>Enroll your main phone in the Android app before requesting an approval.</p>}
     {status && !status.office_trust_enabled && <p className="notice" style={{ marginTop: 18 }}>Office access is disabled until the Bluetooth witness flow has been tested with the computer and both workplace phones. Signed node responses alone do not prove local presence.</p>}
     {status?.office_trust_enabled && <section className="panel" style={{ marginTop: 18 }}><h2>Computer Bluetooth check</h2>
-      <p className="muted">Grant each workplace phone once. Later login requests reconnect to previously permitted phones.</p>
+      <p className="muted">Grant each workplace phone in this tab. Later requests in the same tab reconnect to those two phones.</p>
       <div className="panel-actions"><button className="btn secondary" onClick={grant} disabled={!!busy}>Grant a workplace phone</button>
         <button className="btn secondary" onClick={contact} disabled={!!busy || !status.challenge}>Contact both phones now</button></div>
       {bluetoothMessage && <p className="notice" role="status" style={{ marginTop: 15 }}>{bluetoothMessage}</p>}
