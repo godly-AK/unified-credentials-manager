@@ -55,8 +55,8 @@ export default function PipelinePage() {
   async function grant() {
     setBusy('bluetooth'); setError('');
     try {
-      const count = await grantWorkplacePhone();
-      setBluetoothMessage(`${count} device permissions saved in this browser. Repeat for the other workplace phone.`);
+      const result = await grantWorkplacePhone();
+      setBluetoothMessage(`${result.count} workplace phone${result.count === 1 ? '' : 's'} ready. ${result.retainedAfterReload ? 'Repeat for the other phone if needed.' : 'Keep this tab open; grant both phones again if you reload it.'}`);
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not connect to the workplace phone.'); }
     finally { setBusy(''); }
   }

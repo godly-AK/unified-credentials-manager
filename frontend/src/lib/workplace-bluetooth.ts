@@ -12,9 +12,13 @@ type Device = {
   }> }> };
 };
 type BrowserBluetooth = {
-  getDevices(): Promise<Device[]>;
+  getDevices?: () => Promise<Device[]>;
   requestDevice(options: { filters: Array<{ services: string[] }> }): Promise<Device>;
 };
+
+// Some Web Bluetooth browsers support the chooser but not getDevices(). Keep
+// selected devices for the lifetime of this tab so both nodes can be contacted.
+const selectedDevices = new Map<string, Device>();
 
 function bluetooth(): BrowserBluetooth {
   const available = (navigator as Navigator & { bluetooth?: BrowserBluetooth }).bluetooth;
@@ -22,10 +26,22 @@ function bluetooth(): BrowserBluetooth {
   return available;
 }
 
-export async function grantWorkplacePhone(): Promise<number> {
+async function grantedDevices(api: BrowserBluetooth): Promise<Device[]> {
+  if (typeof api.getDevices === 'function') {
+    try {
+      for (const device of await api.getDevices()) selectedDevices.set(device.id, device);
+    } catch {
+      // The devices selected in this tab can still be used.
+    }
+  }
+  return [...selectedDevices.values()];
+}
+
+export async function grantWorkplacePhone(): Promise<{ count: number; retainedAfterReload: boolean }> {
   const api = bluetooth();
-  await api.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
-  return (await api.getDevices()).length;
+  const device = await api.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
+  selectedDevices.set(device.id, device);
+  return { count: (await grantedDevices(api)).length, retainedAfterReload: typeof api.getDevices === 'function' };
 }
 
 function uuidBytes(value: string): Uint8Array {
@@ -35,7 +51,7 @@ function uuidBytes(value: string): Uint8Array {
 }
 
 export async function sendChallengeToGrantedPhones(challengeId: string): Promise<{ reached: number; granted: number }> {
-  const devices = await bluetooth().getDevices();
+  const devices = await grantedDevices(bluetooth());
   let reached = 0;
   for (const device of devices) {
     try {
