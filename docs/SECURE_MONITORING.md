@@ -4,9 +4,21 @@ The optional [monitoring Compose overlay](../deploy/production/monitoring.yaml) 
 
 The synopsis names Elasticsearch and Kibana. UCM uses its Python exporter for ingestion; it does not run Logstash. Call this an Elasticsearch/Kibana monitoring pipeline rather than claiming a literal three-product ELK deployment.
 
+## Optional live phone-lab events
+
+The isolated HTTPS phone lab uses SQLite, while the secured monitoring Compose stack uses PostgreSQL. They therefore have separate audit streams by default. For the lab presentation, [phone-lab-export.yaml](../deploy/production/phone-lab-export.yaml) adds a second exporter container that reads the phone-lab database and sends its committed security events over TLS to the same secured Elasticsearch index. It uses the existing restricted exporter API key, and `phone-lab:` document IDs keep the two streams distinct. The phone-lab database also records its own export checkpoint. The phone-lab API, enrolled keys, and sessions stay in its existing database.
+
+After the secured monitoring stack and phone lab are running, use the same private Compose environment file as the monitoring stack. On the demonstration laptop, from the repository root:
+
+```powershell
+docker compose --env-file .demo/production-monitoring.env -p ucm-monitorcheck -f deploy/production/compose.yaml -f deploy/production/monitoring.yaml -f deploy/production/phone-lab-export.yaml up -d --no-deps --build phone-lab-audit-exporter
+```
+
+This overlay mounts the local ignored `.demo/phone-lab/` directory into the exporter container. It is for the isolated lab machine and requires that directory to exist. On November 4, the bridge indexed 125 existing phone-lab events without replacing the seven secured-stack events; a fresh failed sign-in through the ngrok portal advanced the phone-lab checkpoint and Elasticsearch count together. In Kibana, filter the dashboard with `source.keyword: "phone-lab"`, set an appropriate time range, and click **Refresh** after a new event. The saved dashboard does not auto-refresh. Keep the Elasticsearch and Kibana ports bound as configured; do not expose the local lab database or API key publicly.
+
 ## Access and data flow
 
-1. PostgreSQL remains the source of truth for UCM security events and administrator reviews.
+1. PostgreSQL remains the source of truth for the secured deployment's security events and administrator reviews. The optional phone lab keeps its own SQLite audit store.
 2. The exporter reads committed event IDs and writes them to Elasticsearch over TLS with certificate validation. Its API key is restricted to indexing `ucm-security-events-v1`, is stored in a private Docker volume, and is not included in the app or Kibana configuration.
 3. Elasticsearch publishes no host port. An unauthenticated request is rejected. The exporter key cannot read the index.
 4. Kibana uses its own `kibana_system` service account to reach Elasticsearch over TLS. Its browser UI is published only at `127.0.0.1:5601` and requires an Elasticsearch user login. Use a protected SSH tunnel for remote operator access; do not publish port 5601 publicly.

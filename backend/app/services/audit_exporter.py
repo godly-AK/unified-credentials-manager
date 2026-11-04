@@ -4,6 +4,7 @@ import binascii
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -33,11 +34,12 @@ def load_export_api_key() -> str | None:
     return inline or None
 
 
-def bulk_payload(rows: list[SecurityEvent]) -> bytes:
+def bulk_payload(rows: list[SecurityEvent], *, document_prefix: str = "") -> bytes:
     lines = []
     for row in rows:
-        lines.append(json.dumps({"index": {"_index": INDEX, "_id": str(row.id)}}))
-        lines.append(json.dumps({
+        document_id = f"{document_prefix}:{row.id}" if document_prefix else str(row.id)
+        lines.append(json.dumps({"index": {"_index": INDEX, "_id": document_id}}))
+        event = {
             "event_id": row.id,
             "event_type": row.event_type,
             "username": row.username,
@@ -45,7 +47,10 @@ def bulk_payload(rows: list[SecurityEvent]) -> bytes:
             "risk_level": row.risk_level,
             "details": row.details,
             "created_at": utc(row.created_at).isoformat(),
-        }))
+        }
+        if document_prefix:
+            event["source"] = document_prefix
+        lines.append(json.dumps(event))
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
@@ -67,6 +72,7 @@ def validate_export_target(elasticsearch_url: str, api_key: str | None, *, produ
 def export_once(
     db: Session, elasticsearch_url: str, *, batch_size: int = 100,
     api_key: str | None = None, ca_cert: str | None = None, production: bool = False,
+    document_prefix: str = "",
 ) -> int:
     validate_export_target(elasticsearch_url, api_key, production=production)
     if ca_cert and not Path(ca_cert).is_file():
@@ -79,7 +85,7 @@ def export_once(
     headers = {"Content-Type": "application/x-ndjson"}
     if api_key:
         headers["Authorization"] = "ApiKey " + api_key
-    request_options = {"data": bulk_payload(rows), "headers": headers, "timeout": 15}
+    request_options = {"data": bulk_payload(rows, document_prefix=document_prefix), "headers": headers, "timeout": 15}
     if ca_cert:
         request_options["verify"] = ca_cert
     response = requests.post(elasticsearch_url.rstrip("/") + "/_bulk", **request_options)
@@ -105,6 +111,9 @@ def main() -> None:
         raise SystemExit("Set ELASTICSEARCH_URL before starting the audit exporter.")
     api_key = load_export_api_key()
     ca_cert = os.environ.get("ELASTICSEARCH_CA_CERT", "").strip() or None
+    document_prefix = os.environ.get("UCM_AUDIT_DOCUMENT_PREFIX", "").strip()
+    if document_prefix and not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}", document_prefix):
+        raise SystemExit("UCM_AUDIT_DOCUMENT_PREFIX must be a short alphanumeric source name.")
     production = settings.app_env != "development"
     validate_export_target(url, api_key, production=production)
     if ca_cert and not Path(ca_cert).is_file():
@@ -112,7 +121,8 @@ def main() -> None:
     while True:
         try:
             with SessionLocal() as db:
-                count = export_once(db, url, api_key=api_key, ca_cert=ca_cert, production=production)
+                count = export_once(db, url, api_key=api_key, ca_cert=ca_cert,
+                                    production=production, document_prefix=document_prefix)
                 if count:
                     logger.info("Exported %s security events", count)
             if not count:

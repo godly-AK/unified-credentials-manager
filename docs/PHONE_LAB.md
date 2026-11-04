@@ -25,6 +25,8 @@ Open the **HTTPS** address on the laptop. Enter this same HTTPS address as the s
 
 The portal and API share the tunnel origin, so the browser can use an HttpOnly, Secure, SameSite=Lax session cookie without cross-site cookie workarounds. The backend accepts writes only from the configured HTTPS origin. The sample site at localhost:3100 is not part of this phone rehearsal.
 
+For a live Kibana view of this phone lab's audit events, start the optional [secured monitoring bridge](SECURE_MONITORING.md#optional-live-phone-lab-events) after the separate monitoring stack is running. The built-in administrator page reads this SQLite lab database directly; Kibana reads a copy sent by the bridge. Filter Kibana with `source.keyword: "phone-lab"` and click **Refresh** after a new event.
+
 ## Demonstrate and record
 
 Use a fresh synthetic account. Enroll the main phone and each trusted node on separate devices so every role has a separate physical key.

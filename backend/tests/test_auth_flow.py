@@ -1,5 +1,6 @@
 import os
 import base64
+import json
 from datetime import datetime, timedelta, timezone
 
 os.environ["DATABASE_URL_OVERRIDE"] = "sqlite://"
@@ -14,7 +15,7 @@ from app.core.limiter import limiter
 from app.core.config import settings
 from app.main import app
 from app.api.routers.mobile import reset_message
-from app.services.audit_exporter import INDEX, export_once, load_export_api_key, validate_export_target
+from app.services.audit_exporter import INDEX, bulk_payload, export_once, load_export_api_key, validate_export_target
 from app.admin.recover_phone import recover_phone
 from app.admin.manage_nodes import list_nodes, operator_revoke_node
 from app.admin.retention import expired_event_count, prune_events
@@ -710,6 +711,17 @@ def test_audit_export_retries_without_losing_events(client, monkeypatch):
         assert export_once(db, "http://localhost:9200") == 0
         assert db.get(AuditExportCheckpoint, "ucm-security-events-v1").last_event_id == 1
     assert sent[0] == sent[1]
+
+
+def test_phone_lab_export_uses_distinct_document_ids(client):
+    register(client)
+    with SessionLocal() as db:
+        row = db.query(SecurityEvent).one()
+        primary = bulk_payload([row]).decode().splitlines()
+        phone_lab = bulk_payload([row], document_prefix="phone-lab").decode().splitlines()
+    assert json.loads(primary[0])["index"]["_id"] == str(row.id)
+    assert json.loads(phone_lab[0])["index"]["_id"] == f"phone-lab:{row.id}"
+    assert json.loads(phone_lab[1])["source"] == "phone-lab"
 
 
 def test_secured_audit_export_requires_https_and_scoped_key(client, monkeypatch, tmp_path):

@@ -1,0 +1,32 @@
+# Optional lab bridge: index the isolated HTTPS phone-lab audit stream in the
+# existing secured monitoring stack. It does not change the phone-lab API or DB.
+services:
+  phone-lab-audit-exporter:
+    build:
+      context: ../../backend
+    command: ["python", "-m", "app.services.audit_exporter"]
+    restart: unless-stopped
+    environment:
+      APP_ENV: phone-lab
+      DATABASE_URL_OVERRIDE: sqlite:////phone-lab/ucm.sqlite3
+      DATA_ENCRYPTION_KEY: ${UCM_DATA_ENCRYPTION_KEY:?Set UCM_DATA_ENCRYPTION_KEY}
+      SESSION_COOKIE_SECURE: "true"
+      CORS_ALLOW_ORIGINS: https://${UCM_DOMAIN:?Set UCM_DOMAIN}
+      ELASTICSEARCH_URL: https://elasticsearch:9200
+      ELASTICSEARCH_API_KEY_FILE: /etc/ucm/monitor-secrets/exporter-api-key
+      ELASTICSEARCH_CA_CERT: /etc/ucm/elastic-certs/ca/ca.crt
+      UCM_AUDIT_DOCUMENT_PREFIX: phone-lab
+    volumes:
+      - ../../.demo/phone-lab:/phone-lab
+      - type: volume
+        source: elastic_certs
+        target: /etc/ucm/elastic-certs/ca
+        read_only: true
+        volume:
+          subpath: ca
+      - elastic_secrets:/etc/ucm/monitor-secrets:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      elastic-setup:
+        condition: service_completed_successfully
