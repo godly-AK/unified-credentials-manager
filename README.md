@@ -172,3 +172,9 @@ mobile/                  Earlier Flutter client, retained as a reference
 4. Evaluate standards-based site integration and passkeys as future work. Autofill, machine-learning location prediction, and relay-resistant ranging are not implemented.
 
 Selected NIST and OWASP guidance informs the implementation; no certification or complete standards compliance is claimed.
+
+## Contributing and licensing
+
+Issues, feedback, and suggestions are welcome. If you would like to contribute code, contact the maintainers to agree on contribution terms before submitting changes.
+
+The repository does not currently grant a general software license for reuse. GitHub's terms still allow viewing and forking public repositories. Contact the maintainers for permission to use or redistribute the code outside those terms.
