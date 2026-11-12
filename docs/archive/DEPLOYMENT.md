@@ -1,8 +1,8 @@
 # Self-hosted HTTPS deployment
 
-The [production Compose definition](../deploy/production/compose.yaml) puts the portal and API behind one Caddy HTTPS origin. PostgreSQL, FastAPI, and the portal have no published host ports; only Caddy listens on 80 and 443. UCM makes authentication and trust decisions locally. This path does not use ngrok or any hosted identity provider.
+The [production Compose definition](../../deploy/production/compose.yaml) puts the portal and API behind one Caddy HTTPS origin. PostgreSQL, FastAPI, and the portal have no published host ports; only Caddy listens on 80 and 443. UCM makes authentication and trust decisions locally. This path does not use ngrok or any hosted identity provider.
 
-The deployment definition has been built and run under a local test hostname with a local Caddy certificate authority; see the [local HTTPS evidence](security/local-https-smoke.md). It has **not** been run against a real public domain. The ordinary localhost demo uses HTTP and a separate SQLite database. The [phone lab](PHONE_LAB.md) uses a temporary ngrok tunnel and isolated database for the eventual three-phone acceptance test.
+The deployment definition has been built and run under a local test hostname with a local Caddy certificate authority; see the [local HTTPS evidence](../security/local-https-smoke.md). It has **not** been run against a real public domain. The ordinary localhost demo uses HTTP and a separate SQLite database. The [phone lab](PHONE_LAB.md) uses a temporary ngrok tunnel and isolated database for the eventual three-phone acceptance test.
 
 ## Configure
 
@@ -34,7 +34,7 @@ The backend applies Alembic migrations before serving requests. An incompatible 
 
 ## Backups, keys, and monitoring
 
-Back up PostgreSQL and the `.env` secrets separately, then perform a test restore before relying on them. A local rehearsal restored a custom-format dump into a **separate** database and matched user, history, event, and Alembic revision counts; see [evidence](security/local-https-smoke.md). The database holds password hashes, public keys, sessions, and audit events. Protect access to backups as carefully as the live database. Changing `UCM_DATA_ENCRYPTION_KEY` requires a planned migration or session invalidation; replacing it casually will break decryption of existing CSRF secrets.
+Back up PostgreSQL and the `.env` secrets separately, then perform a test restore before relying on them. A local rehearsal restored a custom-format dump into a **separate** database and matched user, history, event, and Alembic revision counts; see [evidence](../security/local-https-smoke.md). The database holds password hashes, public keys, sessions, and audit events. Protect access to backups as carefully as the live database. Changing `UCM_DATA_ENCRYPTION_KEY` requires a planned migration or session invalidation; replacing it casually will break decryption of existing CSRF secrets.
 
 Security events remain in PostgreSQL in this minimal deployment and can be reviewed through the phone-protected [administrator monitoring page](ADMIN_MONITORING.md). For centralized monitoring, add the [secured Elasticsearch/Kibana overlay](SECURE_MONITORING.md). A local rehearsal proved authenticated TLS export, a Kibana login, a restricted API key, and dashboard import. Its Kibana port binds only to loopback. Index/backup retention, secret rotation, investigator accounts, and public-domain validation remain operational work. The separate development monitoring stack still disables authentication and must not be exposed.
 

@@ -1,3 +1,5 @@
+> Historical document: this reflects an earlier prototype and contains outdated instructions. Use the root [README](../../README.md) for the current project.
+
 # Project Structure
 
 This document outlines the high-level architecture of the Unified Credentials Manager repository. The codebase has been organized into a standard monorepo structure to separate concerns and make development easier.

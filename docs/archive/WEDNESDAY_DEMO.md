@@ -1,3 +1,5 @@
+> Historical walkthrough: administrator monitoring now requires an active office grant with two node approvals. See [current admin access](ADMIN_MONITORING.md).
+
 # Wednesday progress-check demonstration
 Historical October 7, 2026 walkthrough. The former October 21 submission target has passed. For the current build, also use [TRUST_LEVELS.md](TRUST_LEVELS.md), [PROGRESS.md](PROGRESS.md), and the [technical report draft](FINAL_REPORT_DRAFT.md). A November 3 update adds operator workplace-node inventory, emergency revocation, same-origin API routing, an isolated HTTPS phone lab, an account login throttle, guarded audit retention, and restricted access for newly compromised passwords; the backend suite now passes 51 tests.
 

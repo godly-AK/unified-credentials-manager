@@ -255,7 +255,7 @@ Recorded development validation on October 6:
 - Local Windows launcher stop/start cycle verified. Database is retained when stopping.
 - Docker Compose configuration validates; PostgreSQL container execution, production TLS, and external security-tool runs remain unverified. Android runtime execution was completed later on an emulator, as recorded below.
 
-Since the checkpoint, the backend suite reached **50 passing tests**, emulator signing was verified for remote access and password reset, and a secured local PostgreSQL-to-Kibana path passed a live rehearsal with six indexed events. A separate local self-hosted HTTPS stack passed synthetic login, TLS 1.3, selected-port Nmap, packet capture, and passive ZAP checks; see [local HTTPS evidence](security/local-https-smoke.md) and [secured monitoring](SECURE_MONITORING.md). Physical three-phone and public-domain results remain open. Seven of eight synopsis module flows now have local lab evidence; the historical October 7 checkpoint count was four of eight. Neither count measures production security.
+Since the checkpoint, the backend suite reached **50 passing tests**, emulator signing was verified for remote access and password reset, and a secured local PostgreSQL-to-Kibana path passed a live rehearsal with six indexed events. A separate local self-hosted HTTPS stack passed synthetic login, TLS 1.3, selected-port Nmap, packet capture, and passive ZAP checks; see [local HTTPS evidence](../security/local-https-smoke.md) and [secured monitoring](SECURE_MONITORING.md). Physical three-phone and public-domain results remain open. Seven of eight synopsis module flows now have local lab evidence; the historical October 7 checkpoint count was four of eight. Neither count measures production security.
 
 ## 10. Recommended progress-check demonstration
 
@@ -304,7 +304,7 @@ UCM uses selected NIST password practices and OWASP controls as engineering targ
 - [Module progress and validation](PROGRESS.md)
 - [Security baseline and sources](SECURITY_BASELINE.md)
 - [Integration contract](INTEGRATION.md)
-- [Native Android setup](../android-native/README.md)
+- [Native Android setup](../../android-native/README.md)
 - [OWASP CSRF guidance](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
 - [Android emulator fingerprint testing](https://developer.android.com/studio/run/emulator-console#fingerprint-simulation-and-validation)
 - [pgAdmin server connections](https://www.pgadmin.org/docs/pgadmin4/latest/connecting.html)

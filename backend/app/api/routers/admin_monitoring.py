@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
-from app.api.routers.trust import require_remote
+from app.api.routers.trust import require_office
 from app.db.models import AuthSession, LoginNodeApproval, LoginTrustChallenge, SecurityAlertReview, SecurityEvent, User
 from app.services.audit_service import record_security_event
 from app.services.session_service import utc
@@ -23,7 +23,7 @@ class ReviewRequest(BaseModel):
 
 
 def require_monitoring_admin(
-    request: Request, session: AuthSession = Depends(require_remote), db: Session = Depends(get_db),
+    request: Request, session: AuthSession = Depends(require_office), db: Session = Depends(get_db),
 ) -> AuthSession:
     user = db.get(User, session.username)
     if request.headers.get("authorization") or session.client_type != "web" or not user or not user.is_admin:

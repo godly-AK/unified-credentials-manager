@@ -1,119 +1,174 @@
 # Unified Credentials Manager
-UCM is a self-hosted authentication service and reusable account portal. Websites can use its registration, sign-in, session controls and device recovery without maintaining a separate password database.
 
-**Current state: lab prototype under development.** The original synopsis modules and the new trust-level feature have different completion states. See the [synopsis acceptance review](docs/SYNOPSIS_ACCEPTANCE.md) and [progress and boundaries](docs/PROGRESS.md); this is not a production certification.
+A self-hosted authentication service for applications that need graduated access. UCM combines a password, a signed main-phone approval, and two registered workplace witnesses to demonstrate remote and confidential access. The backend checks the active trust level on protected requests.
 
-## Implemented
-- Argon2id password hashing, local password-strength feedback, 15–128 character NFC-normalized passphrases, offline compromised-password screening, and per-user recent-password history. A previously accepted password that later appears in the local breach list can only open a restricted web password-change session.
-- Opaque random sessions with verifier-only storage, HttpOnly cookies, idle/absolute expiry, logout, active-session review and revocation.
-- CSRF synchronizer tokens, browser Origin checks, JSON-only credential requests, account ownership checks, route limits and a one-minute database-backed account login throttle.
-- AES-256-GCM encryption of each stored CSRF secret, with random nonce and session/account-bound associated data.
-- Current-password confirmation for password/device changes; replacing or removing an existing main-phone key also requires its recent signed approval. All sessions are revoked on password change/reset.
-- An operator-only lost-phone recovery command clears the enrolled key, sessions, and pending approvals after offline identity verification; it records a high-risk audit event.
-- An operator-only workplace-node inventory and emergency revocation command clears office grants, pending approvals, and enrollment codes after a node is reported lost.
-- Real security audit events and account activity, including a high-risk event after five recent failed logins against an account. The retrying Elasticsearch exporter, PostgreSQL-backed API, and Kibana dashboard passed a live Docker Compose rehearsal with synthetic events.
-- Cross-account administrator monitoring with event filters, high-risk alert reviews, a phone-approval step, and operator-only role grants. It reads the audit database even when Elasticsearch is offline; the local Kibana dashboard remains an optional lab view.
-- Five-minute RSA-PSS recovery challenges signed over both nonce and new-password digest, with conditional one-time consumption.
-- Native Kotlin/Compose enrollment, biometric signing, main-phone login approval, and workplace-node Bluetooth witness client. Main-phone approval, password reset, and node advertising passed on an API 36.1 emulator; the three-phone physical rehearsal remains.
-- Tiered backend authorization: a password starts a pending approval session but cannot open account pages; main-phone approval opens remote access; any two distinct trusted nodes can raise that session to office access. Office enforcement stays disabled outside the isolated phone lab until physical Bluetooth testing succeeds.
-- [Sign-in page](frontend/src/app/login/page.tsx) showing the approval code, live steps, and automatic workplace check; a [workplace devices page](frontend/src/app/services/pipeline/page.tsx) for enrollment and diagnostics, and an [office-only confidential workspace](frontend/src/app/services/confidential/page.tsx).
-- A clear, responsive portal and independent sample website.
-- A reusable FastAPI dependency and independent backend example that protects its own data by validating the UCM session on each request; sign-out revokes access there immediately.
-- A versioned Alembic schema baseline and copy-based importer for known two- and four-table pre-Alembic databases. Fresh databases are migrated before the API starts; an existing database is marked as current only after its structure matches the baseline.
-- Same-origin `/api` routing for the portal, so a single HTTPS address can serve both the website and Android API during the three-phone lab.
+> **Status:** early-stage, self-hosted prototype. The maintainer reports repeated physical-device testing; a reproducible device matrix and independent security review are still needed before real-world use. Use synthetic credentials and sample data.
 
-## Architecture
+## How it works
+
+| Session state | Requirements | Access |
+| --- | --- | --- |
+| Pending | Valid password | Approval setup only |
+| Remote | Pending session and signed main-phone approval | Account and remote sample data |
+| Office | Remote approval and signatures from any two distinct enrolled nodes | Confidential sample data; monitoring also requires the administrator role |
+
+The browser sends a request identifier to user-selected Bluetooth nodes. Each node obtains the challenge and reports a signature directly to UCM. The main phone's private key requires biometric authorization. Trust grants expire and are checked on the server. Node revocation clears active office grants. Bluetooth is a presence signal; it does not prove an exact location or resist a live relay.
+
 ```text
-UCM portal / integrating website
-              |
-              v
-        FastAPI service <---- Native Android authenticator
-              |                 Keystore key + biometric approval
-              v
-        PostgreSQL deployment
-        SQLite local demo
-        users, history, sessions, recovery challenges, events
+Browser  ── password + session ──> FastAPI ──> SQLite (local) / PostgreSQL
+   │                                  ↑
+   ├── Bluetooth request ID ──> two workplace nodes ── signed responses ──┤
+   └── approval code ──> main phone ── biometric signature ─────────────┘
+                                        │
+                      audit events ──> Python exporter ──> Elasticsearch ──> Kibana
 ```
 
-The development Docker Compose stack includes an Elasticsearch audit exporter. It writes events with stable IDs and records a database checkpoint only after the whole batch succeeds. An optional [secured monitoring overlay](docs/SECURE_MONITORING.md) has also passed a local PostgreSQL-to-Elasticsearch/Kibana rehearsal with TLS, authentication, and a restricted exporter key.
+## What is implemented
 
-## Local demo on Windows
-Install once:
+- Salted Argon2id password hashes, an offline compromised-password list, and rate limits.
+- Revocable server-side sessions, HttpOnly cookies, CSRF tokens, origin checks, and protected API endpoints.
+- Android Keystore signing with a biometric-gated main phone; account owners can enroll and revoke workplace nodes.
+- Operator-assigned administrator monitoring with office-level access, filtered events, and alert review. The dashboard reads the audit database directly.
+- A retrying audit exporter and Kibana dashboard. Ingestion uses a Python exporter rather than Logstash.
+- A same-site sample integration, SQLite development setup, PostgreSQL deployment configuration, and automated backend tests.
+
+The website, Android client, and API remain a prototype. Authentication uses signed challenges and server-side authorization; Bluetooth contact alone is not an office approval.
+
+## Development accounts
+
+These are **sample credentials for an isolated demo database**. They are not created automatically. Register them through the portal the first time; an existing account with the same name keeps its existing password. Never reuse these passwords elsewhere.
+
+| Account | Username | Password | Registration email |
+| --- | --- | --- | --- |
+| Normal user | `ucm_reader_demo` | `Violet orbit lantern 9274!` | `reader@example.test` |
+| Monitoring administrator | `ucm_monitor_demo` | `Cobalt meadow compass 5831!` | `monitor@example.test` |
+
+Registration creates ordinary accounts. Enroll a main phone for each account using the Android app. For the admin account, enroll two distinct workplace nodes as well, then grant the monitoring role using the operator command below. Role assignment revokes existing sessions. After signing in again, the administrator needs a fresh phone approval **and two node approvals** to access `/services/monitoring`. The normal account cannot access monitoring even with office approval. The phone lab has its own database, separate from the localhost demo.
+
+For the **phone lab only**, open a fresh PowerShell terminal at the repository root after creating and enrolling the admin account:
+
+```powershell
+$env:APP_ENV = 'development' # This console command only changes the selected lab database.
+$env:DATABASE_URL_OVERRIDE = 'sqlite:///' + (Resolve-Path '.demo/phone-lab/ucm.sqlite3').Path.Replace('\', '/')
+Push-Location backend
+..\.venv\Scripts\python.exe -m app.admin.roles grant --username ucm_monitor_demo --reason 'Isolated demo monitoring role'
+Pop-Location
+```
+
+Type `ucm_monitor_demo` when prompted. This command requires an enrolled phone and does not create or reset accounts. Never expose public demo credentials or an admin account on a real deployment.
+
+## Getting started on Windows
+
+Clone the repository and install Python 3.11+, Node.js 22, and Android Studio for Android builds. Bluetooth-capable Android devices are required for the physical-device flow.
+
+```powershell
+git clone https://github.com/godly-AK/unified-credentials-manager.git
+cd unified-credentials-manager
+```
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
-cd frontend
+Push-Location frontend
 npm ci
 npm run build
-cd ..
+Pop-Location
 ```
 
-Start:
+For the local account and API demo, run `.\scripts\Start-Demo.ps1` and open `http://localhost:3000`. Stop it with `.\scripts\Stop-Demo.ps1`. The local demo disables office trust by default, so **confidential data and administrator monitoring are unavailable there**.
+
+To demonstrate office access, stop the local demo. Use a Bluetooth-capable laptop with desktop Chrome or Edge, a main phone on Android 15+ with a strong biometric, and two Android 14+ nodes. Install the [debug APK](output/UCM-lab-debug-v0.5.0-android14-2026-11-03.apk) on each device. The app's prefilled server and username can be changed.
+
+Choose a configured ngrok HTTPS domain, then start the isolated phone lab from the repository root:
+
 ```powershell
-.\scripts\Start-Demo.ps1
+.\scripts\Stop-Demo.ps1
+.\scripts\Start-Phone-Lab.ps1 -PublicUrl 'https://YOUR-DOMAIN.ngrok-free.app'
 ```
 
-For a larger offline password-screening corpus, stop the demo and run `.\scripts\Prepare-Blocklist.ps1` once, then start it again. A separate [breach-range download and merge](docs/PASSWORD_SCREENING.md) added a bounded Pwned Passwords sample to the local index. Registration makes no third-party breach-service call.
+In a separate terminal start the tunnel, replacing the domain with the same HTTPS origin:
 
-Open http://localhost:3000, http://localhost:8000/docs, and http://localhost:3100. The launcher stores its persistent local SQLite database and logs in ignored .demo/, and runs the schema migration before starting. Run scripts/Stop-Demo.ps1 to stop the processes. Use localhost consistently for cookie behavior.
-
-## Docker / PostgreSQL
-For a new empty PostgreSQL volume, start Docker Desktop:
-```bash
-docker compose up --build postgres backend frontend
+```powershell
+ngrok http 3000 --url https://YOUR-DOMAIN.ngrok-free.app
 ```
-To include Elasticsearch, Kibana, and the audit exporter, use `docker compose up --build`. Import the saved [Kibana dashboard](docs/kibana/ucm-security-events.ndjson) after events arrive; see the [live audit rehearsal](docs/AUDIT_PIPELINE.md).
 
-The full container stack passed a local runtime rehearsal on October 30, 2026. The supplied values and disabled monitoring security are local development settings. Set a separate DATA_ENCRYPTION_KEY outside development, secure cookies under HTTPS, explicit origins, database credentials, and service access controls before deployment.
+Open that origin in the laptop browser and enter exactly the same origin in the Android app on every device. The phone lab enables office trust and uses the separate `.demo/phone-lab/ucm.sqlite3` database. To stop it, run `.\scripts\Stop-Phone-Lab.ps1` and stop ngrok.
 
-Compose binds published development ports to `127.0.0.1` by default, including PostgreSQL, Elasticsearch, Kibana, the API, and the portal. A physical phone cannot reach those localhost ports; use a trusted HTTPS deployment for real-device tests. The [security testing record](docs/SECURITY_TESTING.md) gives the side-by-side port settings and repeatable ZAP command.
+1. Register the normal sample account, enter its credentials on the website, and enroll the main phone in the app with the same username and password.
+2. Return to sign-in, start an approval if needed, enter the eight-digit code in the app, and approve using biometrics. Remote access is now available.
+3. On the website, open **Workplace devices**. Create an enrollment code for each of two distinct nodes, claim each code from that device's **Node** screen, and start Bluetooth witness mode. Keep the node apps available.
+4. On the login page, use the browser picker to choose each enrolled node. Start a fresh request and approve on the main phone; the browser attempts to contact previously selected nodes. The office level requires two signed reports, not just pairing or a successful Bluetooth write.
+5. Register and enroll the monitoring sample account separately. Enroll its two nodes and grant its administrator role using the command above; sign in again and obtain office access before opening **Security monitoring**.
 
-Back up any existing database before upgrading. A database that already matches the current schema is baselined without deleting its data. An older, incompatible schema stops startup with a clear error so it can receive an explicit upgrade migration; it is never silently stamped as current. For a manual upgrade, set the same database environment variables as the API and run `python -m app.db.migrate` from `backend/`.
+For the optional secured monitoring stack and phone-lab audit bridge, start Docker Desktop and run:
 
-A known two- or four-table pre-Alembic database can be copied into a fresh migrated database with the [legacy importer](docs/MIGRATIONS.md). A four-table PostgreSQL lab copy has been rehearsed. Old session and push tokens are intentionally discarded.
+```powershell
+# Requires the private environment file described below.
+docker compose --env-file .demo/production-monitoring.env -p ucm-monitorcheck -f deploy/production/compose.yaml -f deploy/production/monitoring.yaml up -d
+docker compose --env-file .demo/production-monitoring.env -p ucm-monitorcheck -f deploy/production/compose.yaml -f deploy/production/monitoring.yaml -f deploy/production/phone-lab-export.yaml up -d --no-deps --build phone-lab-audit-exporter
+```
 
-## Native Android
-Open [android-native](android-native/README.md) in Android Studio. The main-phone role requires Android 15/API 35+ and a strong biometric. Trusted-node mode supports Android 14/API 34+ through a Keystore P-256 signing key; physical multi-node testing remains. SDK 36 is used for compilation. The original Flutter client remains a reference.
+For a fresh setup, copy `deploy/production/.env.example` to `.demo/production-monitoring.env` and fill in the required values with independent, private secrets. The secured stack also needs its configured domain; it is separate from the SQLite phone lab. Open `http://localhost:5601`, sign in with the configured Elasticsearch account, and import `docs/kibana/ucm-security-events.ndjson` through **Stack Management → Saved Objects**. Filter `source.keyword: "phone-lab"`, select a time range, and refresh after new activity. Kibana is a separate view: UCM's administrator page reads its own database and is still subject to its office gate.
 
-For the eventual three-phone test, use the [isolated HTTPS phone-lab runbook](docs/PHONE_LAB.md). The normal localhost demo and its database remain separate. For a self-hosted domain, see the [HTTPS deployment starting point](docs/DEPLOYMENT.md).
+## Integrate a sample application
+
+The included independent FastAPI example checks the UCM session on each protected request. Start the local demo, then in a second terminal run:
+
+```powershell
+$env:UCM_API_URL = 'http://127.0.0.1:8000'
+$env:UCM_SESSION_COOKIE_NAME = 'ucm_session'
+Push-Location examples/python-website
+..\..\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 3200
+Pop-Location
+```
+
+Open `http://localhost:3200/private`. It is denied until the account has a phone-approved session; signing out of UCM revokes access on the next request. Both browser sites must use `localhost`, as cookies are host-scoped. This example checks identity for a trusted same-host deployment. Integrators must implement authorization and CSRF protection for their own data and write routes.
+
+For a containerized PostgreSQL development stack on Windows, macOS, or Linux, run `docker compose up --build postgres backend frontend` and open `http://localhost:3000`. The default Compose settings are for local development; office access is disabled and physical phones need a reachable HTTPS origin.
 
 ## Verification
+
 ```powershell
-cd backend
-..\.venv\Scripts\python.exe -m pytest -q
-cd ../frontend
-npm run build
+Push-Location backend
+..\.venv\Scripts\python.exe -m pytest tests -q
+Pop-Location
+Push-Location frontend
 npm run lint
-npm audit --omit=dev
-cd ../android-native
-$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
-$env:Path = "$env:JAVA_HOME\bin;$env:Path"
-.\gradlew.bat assembleDebug testDebugUnitTest
+npm run build
+Pop-Location
 ```
-Use Android Studio's bundled JDK 21 and installed SDK for Gradle. The system JDK 25 failed before Android compilation in the November 3 check; this setting passed the APK build and all three JVM tests.
 
-## Project documents
-- [Current feature list, explanations, and demo guide](docs/CURRENT_PROJECT_GUIDE.md)
-- [Wednesday walkthrough](docs/WEDNESDAY_DEMO.md)
-- [Viva questionnaire and study guide](docs/VIVA_AND_STUDY_GUIDE.md)
-- [Module progress and remaining work](docs/PROGRESS.md)
-- [Trust-level architecture, setup, and limits](docs/TRUST_LEVELS.md)
-- [Offline password-screening corpus and update process](docs/PASSWORD_SCREENING.md)
-- [Database migration and older-schema import](docs/MIGRATIONS.md)
-- [Live PostgreSQL-to-Kibana audit pipeline](docs/AUDIT_PIPELINE.md)
-- [Secured Elasticsearch/Kibana deployment and incident procedure](docs/SECURE_MONITORING.md)
-- [Administrator monitoring access and investigation guide](docs/ADMIN_MONITORING.md)
-- [Security controls and cryptographic boundaries](docs/SECURITY_BASELINE.md)
-- [Security testing results and remaining scans](docs/SECURITY_TESTING.md)
-- [Three-phone HTTPS lab setup and acceptance record](docs/PHONE_LAB.md)
-- [Self-hosted HTTPS deployment](docs/DEPLOYMENT.md)
-- [Technical report draft with evidence and open acceptance tests](docs/FINAL_REPORT_DRAFT.md)
-- [Lab operator recovery policy](docs/OPERATOR_POLICY.md)
-- [Audit-event access and retention policy](docs/AUDIT_POLICY.md)
-- [Website integration contract](docs/INTEGRATION.md)
-- [Independent Python website adapter and example](examples/python-website/README.md)
+The backend suite checks authentication, session security, signed challenges, authorization, node revocation, and admin monitoring. The saved ZAP scans were passive and limited; they are not a penetration test or a certification. GitHub Actions runs the backend suite and frontend lint/build for pushes and pull requests.
 
-## Remaining work
-Three-physical-phone biometric and BLE acceptance; the human identity-check step of operator recovery; full breach-corpus coverage; a public-domain TLS deployment with production secrets; monitoring retention and key rotation; authenticated browser and broader active security scans; public-network Nmap and packet-capture evidence; and a final report with those results. Local HTTPS, secured monitoring, selected-port Nmap, passive portal/API scanning, and operator command mechanics have been rehearsed, with their limits recorded in [security testing](docs/SECURITY_TESTING.md). The synopsis's former October 21 target has passed; remaining work is tracked by evidence rather than the old date.
+## Limitations and next steps
 
-UCM follows selected NIST password practices and OWASP controls. It does not claim formal NIST certification, FIPS assurance, or complete ASVS Level 2 coverage.
+- Sign-in is still cumbersome: phone enrollment, code entry, browser Bluetooth permission, and active witness apps are needed. Browser Bluetooth support and reconnection vary.
+- The maintainer reports successful physical-device tests, but a repeatable results matrix across devices, environments, and failure cases has not yet been recorded. No exact distance, room boundary, or relay resistance is established. Node keys are distinct, but hardware attestation of separate physical devices is not implemented.
+- This is a trusted same-site integration example, not an OAuth/OIDC provider or a general drop-in identity service. Passkeys, password autofill, location prediction, and machine learning are future ideas, not current features.
+- The breach corpus is partial. Production operations still need independent security review, wider authenticated testing, secrets and key rotation, backups, retention, and incident response.
+- The ngrok phone lab terminates HTTPS at ngrok and uses a debug APK. A public, self-hosted deployment has not been validated.
+
+## Project structure
+
+```text
+backend/                 FastAPI service, migrations, and backend tests
+frontend/                Next.js portal
+android-native/          Kotlin Android authenticator and trusted node
+examples/                Sample website integrations
+deploy/production/       Caddy, PostgreSQL, and secured monitoring configuration
+scripts/                 Local setup, phone testing, and security-check helpers
+docs/                    Kibana assets, security evidence, and historical notes
+output/                  Debug APKs and historical project artifacts
+archive/                 Earlier infrastructure configurations (not the active setup)
+mobile/                  Earlier Flutter client, retained as a reference
+.github/workflows/       Automated backend and frontend checks
+```
+
+## Next steps
+
+1. Record a repeatable physical test matrix for office approval, revoked or unavailable nodes, different browsers, and login latency.
+2. Broaden authenticated security testing, obtain independent review, and test recovery and operational processes.
+3. Improve enrollment and Bluetooth reconnection, and measure usability and accessibility.
+4. Evaluate standards-based site integration and passkeys as future work. Autofill, machine-learning location prediction, and relay-resistant ranging are not implemented.
+
+Selected NIST and OWASP guidance informs the implementation; no certification or complete standards compliance is claimed.

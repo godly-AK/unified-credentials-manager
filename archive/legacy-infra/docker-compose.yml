@@ -1,3 +1,4 @@
+# Historical development configuration. Use the repository root docker-compose.yml instead.
 version: '3.8'
 
 services:

@@ -6,7 +6,7 @@ UCM now has a cross-account monitoring page at `/services/monitoring`. It reads 
 
 - Public registration always creates an ordinary account. There is no web endpoint to grant the monitoring role.
 - A database operator grants or removes the role with a confirmed command. Granting requires an enrolled main phone; either role change revokes all of that account's sessions and writes a high-risk audit event.
-- Every monitoring API request requires an active **web cookie session**, the monitoring role, and a current main-phone trust approval. An Android bearer credential or a password-only web session is insufficient. The approval expires with the normal short-lived remote trust grant.
+- Every monitoring API request requires an active **web cookie session**, the monitoring role, and a current office grant (main-phone approval plus two distinct trusted-node signatures). An Android bearer credential or a password-only web session is insufficient. The office grant expires with its short-lived trust period; monitoring is unavailable when office trust is disabled.
 - The account activity page still shows only the owner's most recent 20 events. Cross-account event details and review notes are returned only through the administrator routes, with `Cache-Control: no-store`.
 
 From `backend/`, with the same database configuration as the API, a designated operator can grant the role after verifying the person's identity and phone enrollment:
@@ -25,7 +25,7 @@ Both commands require the exact username to be typed again. They need database-h
 
 ## What an administrator can do
 
-1. Sign in to the website. The sign-in page starts a request automatically; enter its eight-digit code in the enrolled main phone and approve.
+1. Sign in to the website. The sign-in page starts a request automatically; enter its eight-digit code in the enrolled main phone and approve. Contact two distinct enrolled workplace nodes and wait until the office grant is active.
 2. Open **Security monitoring** from the account page. The summary shows the past 24 hours of events, failed sign-ins, and high-risk events, plus all currently open high-risk alerts. The seven-day charts show activity by day and server-assigned risk, and the request table shows the last 25 main-phone and trusted-node approvals.
 3. Filter events by exact username, risk, or event type; page through older results. View high-risk events and their recorded details.
 4. Record a review note on a high-risk event. UCM keeps the original event, stores the reviewer and time separately, and records a `SECURITY_ALERT_REVIEWED` event. A second review of the same alert is rejected.
@@ -34,7 +34,7 @@ The backend creates a high-risk `SUSPICIOUS_LOGIN_BURST` event on each fifth rec
 
 ## Verification and limits
 
-Automated tests cover role defaults, phone-enrollment requirement, session invalidation on grant and revoke, phone step-up, bearer denial, cross-account filtering, pagination, CSRF, one-time review, request aggregates, and audit records. The backend suite has **52 passing tests**. A local browser rehearsal with a disposable synthetic admin account opened the page after a signed approval, recorded a review, and returned to login immediately after the role was revoked. The original demo database migrated from revision `02ab954e12a1` to `b7e942d0c531` with **21 users and 149 events preserved**; a separate unversioned copy also migrated while preserving those counts.
+Automated tests cover role defaults, phone-enrollment requirement, session invalidation on grant and revoke, office step-up, bearer denial, cross-account filtering, pagination, CSRF, one-time review, request aggregates, and audit records. The current backend tests cover the office gate and its revocation. A local browser rehearsal with a disposable synthetic admin account opened the page under the earlier phone-only policy, recorded a review, and returned to login immediately after the role was revoked. The original demo database migrated from revision `02ab954e12a1` to `b7e942d0c531` with **21 users and 149 events preserved**; a separate unversioned copy also migrated while preserving those counts.
 
 An isolated PostgreSQL/Caddy deployment rehearsal also reached revision `b7e942d0c531`, created the administrator flag and review table, and passed the 19-check HTTPS security probe with its local CA trusted. A newly registered account had `is_admin = false`; the unauthenticated monitoring endpoint returned HTTP 401. This verifies the production-style migration and ordinary-user default, not a physical phone or public deployment.
 

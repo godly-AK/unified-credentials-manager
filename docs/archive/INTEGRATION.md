@@ -1,6 +1,6 @@
 # Integrating a website with UCM
 
-UCM currently provides a shared authentication API for websites under a trusted, same-site deployment. It is not an OAuth/OIDC provider. The included static sample shows browser access to UCM-protected data. The separate [FastAPI website example](../examples/python-website/README.md) protects **its own backend route** by checking UCM's session on each request; neither example maintains a password store.
+UCM currently provides a shared authentication API for websites under a trusted, same-site deployment. It is not an OAuth/OIDC provider. The included static sample shows browser access to UCM-protected data. The separate [FastAPI website example](../../examples/python-website/README.md) protects **its own backend route** by checking UCM's session on each request; neither example maintains a password store.
 
 ## Run the sample
 

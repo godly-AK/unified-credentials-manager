@@ -25,7 +25,7 @@ type Overview = {
   requests: { id: string; username: string; created_at: string; phone: boolean; approved_node_count: number; expired: boolean }[];
 };
 type Filters = { username: string; risk: '' | Risk; event_type: string };
-type Status = 'loading' | 'ready' | 'needs-phone' | 'forbidden' | 'error';
+type Status = 'loading' | 'ready' | 'needs-office' | 'forbidden' | 'error';
 
 const initialFilters: Filters = { username: '', risk: '', event_type: '' };
 
@@ -83,12 +83,33 @@ export default function MonitoringPage() {
       } catch (failure) {
         const message = getApiError(failure, 'Could not load monitoring. Refresh and try again.');
         setError(message);
-        setStatus(message.includes('Approve this login') ? 'needs-phone' : 'error');
+        setStatus(message.includes('Two distinct trusted nodes') ? 'needs-office' : 'error');
       }
     } catch { setStatus('error'); setError('Your session could not be checked. Sign in again.'); }
   }, [eventParams]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (status !== 'ready') return;
+    let active = true;
+    const checkOfficeAccess = async () => {
+      try {
+        const response = await api.get('/api/trust/status');
+        if (active && (!response.data.office_trust_enabled || response.data.level !== 'office')) {
+          setSummary(undefined); setOverview(undefined); setEvents([]); setAlerts([]);
+          setStatus('needs-office');
+        }
+      } catch {
+        if (active) {
+          setSummary(undefined); setOverview(undefined); setEvents([]); setAlerts([]);
+          setStatus('error'); setError('Your session could not be checked. Sign in again.');
+        }
+      }
+    };
+    const timer = window.setInterval(() => { void checkOfficeAccess(); }, 10000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [status]);
 
   async function loadMore() {
     if (!nextBefore || busy) return;
@@ -127,19 +148,19 @@ export default function MonitoringPage() {
     } catch (failure) {
       const message = getApiError(failure, 'Could not record this review.');
       setError(message);
-      if (message.includes('Approve this login')) setStatus('needs-phone');
+      if (message.includes('Two distinct trusted nodes')) setStatus('needs-office');
     }
     finally { setBusy(false); }
   }
 
   return <main>
     <div className="heading-row">
-      <div><span className="eyebrow">Administrator access</span><h1>Security monitoring</h1><p className="muted">Review activity across accounts and record the outcome of high-risk alerts.</p></div>
+      <div><span className="eyebrow">Administrator access</span><h1>Security monitoring</h1><p className="muted">Investigate account activity and document reviews of high-risk events.</p></div>
       <Link className="btn secondary small" href="/services">Back to account</Link>
     </div>
     {status === 'loading' && <p className="loading" role="status">Checking monitoring access…</p>}
     {status === 'forbidden' && <section className="panel"><h2>Administrator access required</h2><p className="muted">A database operator must grant this role to an enrolled account.</p></section>}
-    {status === 'needs-phone' && <section className="panel"><h2>Approve on your main phone</h2><p className="muted">Cross-account monitoring needs a fresh phone approval for this session.</p><div className="panel-actions"><Link href="/login" className="btn">Start phone approval</Link><button className="btn secondary" onClick={() => void load()}>Try again</button></div></section>}
+    {status === 'needs-office' && <section className="panel"><h2>Confidential access required</h2><p className="muted">Administrator monitoring requires an active office session: approve with your main phone and two distinct enrolled workplace nodes.</p><div className="panel-actions"><Link href="/login" className="btn">Open sign-in status</Link><button className="btn secondary" onClick={() => void load()}>Try again</button></div></section>}
     {status === 'error' && <section className="panel"><h2>Monitoring is unavailable</h2><p className="muted">{error}</p><div className="panel-actions"><button className="btn secondary" onClick={() => void load()}>Try again</button></div></section>}
     {status === 'ready' && <>
       <div className="monitor-stats" aria-label="Security activity in the last 24 hours">

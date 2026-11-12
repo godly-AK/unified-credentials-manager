@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from app.db.database import Base, engine, SessionLocal
-from app.db.models import AuthSession, ResetChallenge, SecurityEvent, LoginTrustChallenge, User, AuditExportCheckpoint, NodeEnrollmentTicket
+from app.db.models import AuthSession, ResetChallenge, SecurityEvent, LoginTrustChallenge, User, AuditExportCheckpoint, NodeEnrollmentTicket, SessionTrust
 from app.core.limiter import limiter
 from app.core.config import settings
 from app.main import app
@@ -158,7 +158,8 @@ def test_authentication_events_are_recorded(client):
     assert {"REGISTRATION_SUCCEEDED", "LOGIN_FAILED", "LOGIN_SUCCEEDED"} <= names
 
 
-def test_administrator_monitoring_requires_operator_role_and_phone_approval(client):
+def test_administrator_monitoring_requires_role_and_office_approval(client, monkeypatch):
+    monkeypatch.setattr(settings, "office_trust_enabled", True)
     assert register(client).json()["success"]
     assert login(client).json()["success"]
     assert client.get("/api/admin/monitoring/summary").status_code == 403
@@ -183,6 +184,41 @@ def test_administrator_monitoring_requires_operator_role_and_phone_approval(clie
     assert client.get("/api/admin/monitoring/summary").status_code == 403
     approve_phone_for_session(client, private)
     assert client.get("/api/me").json()["data"]["is_monitoring_admin"] is True
+    # A phone-approved administrator must not see or modify cross-account data.
+    for path in ("summary", "overview", "events", "alerts"):
+        assert client.get("/api/admin/monitoring/" + path).status_code == 403
+    assert client.post("/api/admin/monitoring/alerts/1/review", json={"note": "Reviewed the event"}).status_code == 403
+    nodes = []
+    for slot in ("A", "B"):
+        key = ec.generate_private_key(ec.SECP256R1())
+        public = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+        response = client.post("/api/trust/nodes", json={"slot": slot, "label": "Office " + slot,
+                                "public_key_pem": public, "current_password": PASSWORD})
+        assert response.status_code == 200, response.text
+        nodes.append((response.json()["id"], slot, key))
+    approve_phone_for_session(client, private)
+    challenge_id = client.get("/api/trust/status").json()["challenge"]["id"]
+    nonce = client.get("/api/trust/challenge/" + challenge_id).json()["nonce"]
+    for index, (node_id, slot, key) in enumerate(nodes):
+        payload = f"UCM:login-trust:v1\nnode-{slot}\n{challenge_id}\n{nonce}".encode()
+        signature = base64.b64encode(key.sign(payload, ec.ECDSA(hashes.SHA256()))).decode()
+        assert client.post("/api/trust/node-approve", json={"challenge_id": challenge_id,
+                           "node_id": node_id, "signature_b64": signature}).status_code == 200
+        if index == 0:
+            assert client.get("/api/admin/monitoring/summary").status_code == 403
+    monkeypatch.setattr(settings, "office_trust_enabled", False)
+    assert client.get("/api/admin/monitoring/summary").status_code == 403
+    monkeypatch.setattr(settings, "office_trust_enabled", True)
+    with SessionLocal() as db:
+        grant = db.query(SessionTrust).filter(SessionTrust.level == "office").one()
+        original_expiry = grant.expires_at
+        grant.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.commit()
+    assert client.get("/api/admin/monitoring/summary").status_code == 403
+    with SessionLocal() as db:
+        grant = db.query(SessionTrust).filter(SessionTrust.level == "office").one()
+        grant.expires_at = original_expiry
+        db.commit()
     with TestClient(app) as bearer:
         bearer.headers["Authorization"] = "Bearer " + client.cookies.get("ucm_session")
         assert bearer.get("/api/admin/monitoring/summary").status_code == 403
@@ -218,6 +254,9 @@ def test_administrator_monitoring_requires_operator_role_and_phone_approval(clie
     assert client.post(f"/api/admin/monitoring/alerts/{alert['id']}/review",
                        json={"note": "Checking the same alert again"}).status_code == 409
     assert client.get("/api/admin/monitoring/summary").json()["open_high_risk_alerts"] == summary.json()["open_high_risk_alerts"] - 1
+    assert client.request("DELETE", "/api/trust/nodes/" + nodes[1][0], json={"current_password": PASSWORD}).status_code == 200
+    assert client.get("/api/admin/monitoring/summary").status_code == 403
+    assert client.post(f"/api/admin/monitoring/alerts/{alert['id']}/review", json={"note": "Reviewed after revocation"}).status_code == 403
     with SessionLocal() as db:
         assert db.query(SecurityEvent).filter(SecurityEvent.event_type == "SECURITY_ALERT_REVIEWED").count() == 1
         set_monitoring_admin(db, "lab_student", enabled=False, reason="Lab operator removed access")
@@ -488,6 +527,8 @@ def test_tiered_access_requires_phone_and_two_distinct_nodes(client, monkeypatch
         assert result.status_code == 200, result.text
     office_response = client.get("/api/data/office")
     assert office_response.status_code == 200
+    # Office trust alone never grants the administrator role.
+    assert client.get("/api/admin/monitoring/summary").status_code == 403
     assert len(office_response.json()["documents"]) == 3
     revoked = client.request("DELETE", "/api/trust/nodes/" + nodes["B"], json={"current_password": PASSWORD})
     assert revoked.status_code == 200

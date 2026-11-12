@@ -1,12 +1,12 @@
 # Secured Elasticsearch and Kibana monitoring
 
-The optional [monitoring Compose overlay](../deploy/production/monitoring.yaml) adds Elasticsearch 8.15, Kibana 8.15, certificate/account setup jobs, and the UCM audit exporter to the [HTTPS deployment](DEPLOYMENT.md). It leaves the separate development `docker-compose.yml` unchanged.
+The optional [monitoring Compose overlay](../../deploy/production/monitoring.yaml) adds Elasticsearch 8.15, Kibana 8.15, certificate/account setup jobs, and the UCM audit exporter to the [HTTPS deployment](DEPLOYMENT.md). It leaves the separate development `docker-compose.yml` unchanged.
 
 The synopsis names Elasticsearch and Kibana. UCM uses its Python exporter for ingestion; it does not run Logstash. Call this an Elasticsearch/Kibana monitoring pipeline rather than claiming a literal three-product ELK deployment.
 
 ## Optional live phone-lab events
 
-The isolated HTTPS phone lab uses SQLite, while the secured monitoring Compose stack uses PostgreSQL. They therefore have separate audit streams by default. For the lab presentation, [phone-lab-export.yaml](../deploy/production/phone-lab-export.yaml) adds a second exporter container that reads the phone-lab database and sends its committed security events over TLS to the same secured Elasticsearch index. It uses the existing restricted exporter API key, and `phone-lab:` document IDs keep the two streams distinct. The phone-lab database also records its own export checkpoint. The phone-lab API, enrolled keys, and sessions stay in its existing database.
+The isolated HTTPS phone lab uses SQLite, while the secured monitoring Compose stack uses PostgreSQL. They therefore have separate audit streams by default. For the lab presentation, [phone-lab-export.yaml](../../deploy/production/phone-lab-export.yaml) adds a second exporter container that reads the phone-lab database and sends its committed security events over TLS to the same secured Elasticsearch index. It uses the existing restricted exporter API key, and `phone-lab:` document IDs keep the two streams distinct. The phone-lab database also records its own export checkpoint. The phone-lab API, enrolled keys, and sessions stay in its existing database.
 
 After the secured monitoring stack and phone lab are running, use the same private Compose environment file as the monitoring stack. On the demonstration laptop, from the repository root:
 
@@ -22,13 +22,13 @@ This overlay mounts the local ignored `.demo/phone-lab/` directory into the expo
 2. The exporter reads committed event IDs and writes them to Elasticsearch over TLS with certificate validation. Its API key is restricted to indexing `ucm-security-events-v1`, is stored in a private Docker volume, and is not included in the app or Kibana configuration.
 3. Elasticsearch publishes no host port. An unauthenticated request is rejected. The exporter key cannot read the index.
 4. Kibana uses its own `kibana_system` service account to reach Elasticsearch over TLS. Its browser UI is published only at `127.0.0.1:5601` and requires an Elasticsearch user login. Use a protected SSH tunnel for remote operator access; do not publish port 5601 publicly.
-5. UCM's phone-gated [administrator page](ADMIN_MONITORING.md) reads PostgreSQL directly, so an Elasticsearch outage does not prevent an authorized investigation of current events.
+5. UCM's office-gated [administrator page](ADMIN_MONITORING.md) reads PostgreSQL directly, so an Elasticsearch outage does not prevent an authorized investigation of current events.
 
 The setup job creates a local CA and node certificate. Its CA signing key is kept in a separate volume mounted only by the certificate job. Kibana and the exporter receive only the public CA certificate. Three distinct Kibana encryption keys and the Elasticsearch, Kibana, database, and UCM application secrets must be backed up outside the repository. The generated exporter API key has no automatic expiry in this lab configuration; set a rotation schedule before relying on it operationally.
 
 ## Start
 
-Copy [the production environment example](../deploy/production/.env.example) to a private `.env` under `deploy/production/` and replace every placeholder. Generate distinct random values for `UCM_ELASTIC_PASSWORD`, `UCM_KIBANA_PASSWORD`, and the three 32+ character Kibana keys. The Kibana password must be at least 20 URL-safe characters. Keep the same application and database settings used by the base deployment. From the repository root:
+Copy [the production environment example](../../deploy/production/.env.example) to a private `.env` under `deploy/production/` and replace every placeholder. Generate distinct random values for `UCM_ELASTIC_PASSWORD`, `UCM_KIBANA_PASSWORD`, and the three 32+ character Kibana keys. The Kibana password must be at least 20 URL-safe characters. Keep the same application and database settings used by the base deployment. From the repository root:
 
 ```powershell
 docker compose --env-file deploy/production/.env -f deploy/production/compose.yaml -f deploy/production/monitoring.yaml config --quiet
@@ -37,7 +37,7 @@ docker compose --env-file deploy/production/.env -f deploy/production/compose.ya
 
 The certificate job completes before Elasticsearch starts. Once Elasticsearch is healthy, the account setup job sets the Kibana service password and creates the restricted exporter key. Then Kibana and the exporter start. Existing named volumes are retained across `docker compose down`; protect and back them up separately.
 
-Open `http://localhost:5601/login` on the deployment host and sign in as `elastic` for the initial lab import. From the repository root, import [the saved dashboard](kibana/ucm-security-events.ndjson) through Kibana's Saved Objects import UI, or use its authenticated import API. Give human investigators a dedicated read-only role and account before real use; the built-in `elastic` superuser is only for bootstrap. The dashboard uses the `ucm-security-events-v1` index. Generate a synthetic registration/login event and wait for the exporter checkpoint to advance.
+Open `http://localhost:5601/login` on the deployment host and sign in as `elastic` for the initial lab import. From the repository root, import [the saved dashboard](../kibana/ucm-security-events.ndjson) through Kibana's Saved Objects import UI, or use its authenticated import API. Give human investigators a dedicated read-only role and account before real use; the built-in `elastic` superuser is only for bootstrap. The dashboard uses the `ucm-security-events-v1` index. Generate a synthetic registration/login event and wait for the exporter checkpoint to advance.
 
 ## Rehearsal evidence and limits
 

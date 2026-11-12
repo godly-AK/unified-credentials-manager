@@ -171,23 +171,23 @@ export default function Login() {
   const phoneApproved = Boolean(status?.challenge?.phone || status?.level === 'remote' || status?.level === 'office');
   const officeApproved = status?.level === 'office';
   const levels = [
-    { name: 'Account', detail: 'Password accepted', done: phase === 'approval' },
+    { name: 'Password', detail: 'Credentials accepted', done: phase === 'approval' },
     { name: 'Remote', detail: 'Main phone approved', done: phoneApproved },
     { name: 'Office', detail: 'Two distinct trusted nodes signed', done: officeApproved },
   ];
 
   return <main className="login-workspace">
     <section className="login-context">
-      <h1>Sign in to UCM</h1>
-      <p>One sign-in. Access grows as your devices approve it.</p>
+      <h1>Access, verified in stages.</h1>
+      <p>Sign in with your password, approve on your phone, and use trusted workplace nodes for confidential access.</p>
       <div className="access-ledger" aria-label="Access checks">
         {levels.map(level => <div className="access-ledger-row" key={level.name}>
           <span className={'access-ledger-mark' + (level.done ? ' is-done' : '')} aria-hidden="true" />
           <span><strong>{level.name}</strong><small>{level.detail}</small></span>
-          <span className="access-ledger-state">{level.done ? 'Open' : 'Waiting'}</span>
+          <span className="access-ledger-state">{level.done ? 'Complete' : 'Waiting'}</span>
         </div>)}
       </div>
-      <p className="login-context-note">Trusted nodes are checked after your main phone approves. If fewer than two sign, you can continue with remote access.</p>
+      <p className="login-context-note">Your phone approval enables remote access. Two enrolled nodes can authorize confidential resources and administrator monitoring.</p>
     </section>
 
     <section className="login-work" aria-live="polite">

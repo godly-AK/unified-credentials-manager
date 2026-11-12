@@ -39,7 +39,7 @@ export default function ConfidentialPage() {
     {state === 'locked' && <section className="panel"><h2>Office access required</h2><p className="muted">Your office approval has expired or is incomplete. Sign in again and let two trusted nodes approve.</p><div className="panel-actions"><Link className="btn" href="/login">Start a fresh approval</Link><Link className="btn secondary" href="/services">Remote workspace</Link></div></section>}
     {state === 'error' && <section className="panel"><p className="notice error" role="alert">{message}</p><div className="panel-actions"><button className="btn secondary" onClick={() => void refresh()}>Try again</button></div></section>}
     {state === 'ready' && data && <>
-      <section className="panel office-intro"><h2>Office session verified</h2><p>{data.content}</p><span className="office-example">Sample documents for the lab demonstration</span></section>
+      <section className="panel office-intro"><h2>Office session verified</h2><p>{data.content}</p><span className="office-example">Example documents</span></section>
       <div className="office-documents">{data.documents.map(document => <article className="panel office-document" key={document.title}>
         <span className="eyebrow">{document.category}</span><h2>{document.title}</h2><p className="muted">{document.summary}</p>
       </article>)}</div>

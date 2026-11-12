@@ -27,7 +27,7 @@ UCM uses selected NIST SP 800-63B-4 password practices and OWASP ASVS 5 controls
 | Account authorization | Implemented | Ownership checks on sessions, device operations, and user events |
 | Generic login failure messages | Implemented | Unknown/wrong/blocked account receive generic credential failure |
 | Audit events and risk labels | Implemented and live-verified | Database/account view; fifth recent failed login creates a high-risk burst event, exported to Elasticsearch in the lab stack |
-| Administrator monitoring | Backend and browser rehearsal verified | Operator-only role grant/revoke, web session plus recent main-phone approval, cross-account filtering and paged events, one-time high-risk review; production incident response still pending |
+| Administrator monitoring | Office gate verified by backend tests; physical browser rehearsal pending | Operator-only role grant/revoke, web session plus current office approval (main phone and two nodes), cross-account filtering and paged events, one-time high-risk review; production incident response still pending |
 | Signed reset without active login | Backend and emulator verified | RSA-PSS/SHA-256; message bound to nonce and new-password digest; old password rejected after emulator reset |
 | One-time, five-minute recovery challenge | Implemented | Conditional compare-and-delete consumption; expiry/replay tests |
 | Android device keys and biometric prompt | Emulator runtime verified; physical device pending | API 36.1 emulator completed signed login approval and password reset with a simulated fingerprint; main phone needs API 35+, workplace nodes can use API 34+ with P-256 ECDSA |

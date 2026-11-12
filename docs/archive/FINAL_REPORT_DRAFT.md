@@ -50,7 +50,7 @@ NIST calls for rate limiting on the subscriber account and for passwords to be s
 
 ## Reusable website demonstration
 
-The static Lab Library example has no local password table. It asks UCM's protected endpoint for account, remote, or office notes. A second, independent [Python website example](../examples/python-website/README.md) protects its **own** backend notes using a reusable session-validation dependency. Live testing returned 401 before UCM login, 200 after login, and 401 immediately after UCM logout. These examples prove integration for a trusted same-host deployment. UCM is not an OAuth/OIDC provider and does not support arbitrary unrelated domains without further protocol design.
+The static Lab Library example has no local password table. It asks UCM's protected endpoint for account, remote, or office notes. A second, independent [Python website example](../../examples/python-website/README.md) protects its **own** backend notes using a reusable session-validation dependency. Live testing returned 401 before UCM login, 200 after login, and 401 immediately after UCM logout. These examples prove integration for a trusted same-host deployment. UCM is not an OAuth/OIDC provider and does not support arbitrary unrelated domains without further protocol design.
 
 ## Verification completed
 

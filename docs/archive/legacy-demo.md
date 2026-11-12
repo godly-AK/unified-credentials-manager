@@ -1,3 +1,5 @@
+> Historical document: this reflects an earlier prototype and contains outdated instructions. Use the root [README](../../README.md) for the current project.
+
 # Unified Credentials Manager: Live Demo Script
 
 This script is designed to help you walk an interviewer, recruiter, or team member through the core features of the Unified Credentials Manager. It highlights the architecture, the rigid security hygiene, the machine learning anomaly detection, and the cryptographic mobile app reset flow.
