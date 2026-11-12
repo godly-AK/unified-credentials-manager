@@ -99,6 +99,44 @@ def test_registration_login_and_authenticated_profile(client):
     assert client.get("/api/me").headers["cache-control"] == "no-store"
 
 
+def test_demo_seed_is_idempotent_and_never_promotes_or_resets_existing_accounts(client):
+    import importlib.util
+    from pathlib import Path
+    from app.core.security import verify_password
+
+    assert register(client, "ucm_reader_demo").json()["success"]
+    script = Path(__file__).resolve().parents[2] / "scripts" / "seed_demo_accounts.py"
+    spec = importlib.util.spec_from_file_location("ucm_demo_seed", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with SessionLocal() as db:
+        reader = db.get(User, "ucm_reader_demo")
+        original_hash = reader.password_hash
+        module.seed_accounts(db)
+        module.seed_accounts(db)
+        assert db.get(User, "ucm_reader_demo").password_hash == original_hash
+        monitor = db.get(User, "ucm_monitor_demo")
+        assert monitor.is_admin is False
+        assert verify_password("Cobalt meadow compass 5831!", monitor.password_hash).valid
+
+
+def test_demo_seed_rejects_missing_local_database_before_using_external_settings(tmp_path, monkeypatch):
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "seed_demo_accounts.py"
+    spec = importlib.util.spec_from_file_location("ucm_demo_seed_missing", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", [str(script), "--target", "local"])
+    monkeypatch.setenv("DATABASE_URL_OVERRIDE", "postgresql://example.invalid/production")
+    with pytest.raises(SystemExit, match="selected local demo database"):
+        module.main()
+    assert os.environ["DATABASE_URL_OVERRIDE"] == "postgresql://example.invalid/production"
+
+
 def test_compromised_password_is_rejected(client):
     result = client.post("/api/register", json={"username": "blocked_user", "email": "blocked@example.com", "password": "passwordpassword"})
     assert result.json()["success"] is False

@@ -34,9 +34,30 @@ Browser  ── password + session ──> FastAPI ──> SQLite (local) / Post
 
 The website, Android client, and API remain a prototype. Authentication uses signed challenges and server-side authorization; Bluetooth contact alone is not an office approval.
 
+## Quick start (Windows)
+
+Clone the repository and install Python 3.11+ and Node.js 22:
+
+```powershell
+git clone https://github.com/godly-AK/unified-credentials-manager.git
+cd unified-credentials-manager
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
+Push-Location frontend
+npm ci
+npm run build
+Pop-Location
+.\scripts\Start-Demo.ps1
+.\.venv\Scripts\python.exe scripts/seed_demo_accounts.py --target local
+```
+
+Open `http://localhost:3000`. This starts the portal, API, and sample site with an isolated SQLite database. The seeding command creates two ordinary sample accounts only when they do not already exist; it never resets a password or grants administrator access. To continue beyond the pending sign-in, enroll an Android 15+ main phone through the device setup below, or use an Android Studio emulator with the app server set to `http://10.0.2.2:8000`. An emulator can demonstrate main-phone approval; Bluetooth witness testing requires supported physical devices.
+
+The local setup disables office trust, so confidential data and monitoring remain unavailable. Stop the local servers with `.\scripts\Stop-Demo.ps1`.
+
 ## Development accounts
 
-These are **sample credentials for an isolated demo database**. They are not created automatically. Register them through the portal the first time; an existing account with the same name keeps its existing password. Never reuse these passwords elsewhere.
+These are **sample credentials for isolated development databases**. Create them using the optional seed command or register them manually. Seeding never overwrites an existing account; if the name already exists, its password remains unchanged. Never reuse these passwords elsewhere.
 
 | Account | Username | Password | Registration email |
 | --- | --- | --- | --- |
@@ -57,27 +78,11 @@ Pop-Location
 
 Type `ucm_monitor_demo` when prompted. This command requires an enrolled phone and does not create or reset accounts. Never expose public demo credentials or an admin account on a real deployment.
 
-## Getting started on Windows
+## Physical device setup
 
-Clone the repository and install Python 3.11+, Node.js 22, and Android Studio for Android builds. Bluetooth-capable Android devices are required for the physical-device flow.
+To demonstrate office access, stop the local demo. Use a Bluetooth-capable laptop with desktop Chrome or Edge, a main phone on Android 15+ with a strong biometric, and two Android 14+ nodes. Install the [debug APK](https://github.com/godly-AK/unified-credentials-manager/releases/download/v0.5.0-preview/UCM-lab-debug-v0.5.0-android14-2026-11-03.apk) on each device. The app's prefilled server and username can be changed.
 
-```powershell
-git clone https://github.com/godly-AK/unified-credentials-manager.git
-cd unified-credentials-manager
-```
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
-Push-Location frontend
-npm ci
-npm run build
-Pop-Location
-```
-
-For the local account and API demo, run `.\scripts\Start-Demo.ps1` and open `http://localhost:3000`. Stop it with `.\scripts\Stop-Demo.ps1`. The local demo disables office trust by default, so **confidential data and administrator monitoring are unavailable there**.
-
-To demonstrate office access, stop the local demo. Use a Bluetooth-capable laptop with desktop Chrome or Edge, a main phone on Android 15+ with a strong biometric, and two Android 14+ nodes. Install the [debug APK](output/UCM-lab-debug-v0.5.0-android14-2026-11-03.apk) on each device. The app's prefilled server and username can be changed.
+The preview APK's SHA-256 is `6a1b5c0e6a8ac95c3e4527fda4e491539e78f3fe62ef3db6163ae46c7bacb01c`. It is debug-signed and intended for development.
 
 Choose a configured ngrok HTTPS domain, then start the isolated phone lab from the repository root:
 
@@ -92,13 +97,13 @@ In a separate terminal start the tunnel, replacing the domain with the same HTTP
 ngrok http 3000 --url https://YOUR-DOMAIN.ngrok-free.app
 ```
 
-Open that origin in the laptop browser and enter exactly the same origin in the Android app on every device. The phone lab enables office trust and uses the separate `.demo/phone-lab/ucm.sqlite3` database. To stop it, run `.\scripts\Stop-Phone-Lab.ps1` and stop ngrok.
+Open that origin in the laptop browser and enter exactly the same origin in the Android app on every device. The phone lab enables office trust and uses the separate `.demo/phone-lab/ucm.sqlite3` database. To create its sample accounts, run `.\.venv\Scripts\python.exe scripts/seed_demo_accounts.py --target phone-lab` after the phone lab starts. To stop it, run `.\scripts\Stop-Phone-Lab.ps1` and stop ngrok.
 
-1. Register the normal sample account, enter its credentials on the website, and enroll the main phone in the app with the same username and password.
+1. Create the normal sample account with the seed command or register it through the website. Enter its credentials on the website and enroll the main phone in the app with the same username and password.
 2. Return to sign-in, start an approval if needed, enter the eight-digit code in the app, and approve using biometrics. Remote access is now available.
 3. On the website, open **Workplace devices**. Create an enrollment code for each of two distinct nodes, claim each code from that device's **Node** screen, and start Bluetooth witness mode. Keep the node apps available.
 4. On the login page, use the browser picker to choose each enrolled node. Start a fresh request and approve on the main phone; the browser attempts to contact previously selected nodes. The office level requires two signed reports, not just pairing or a successful Bluetooth write.
-5. Register and enroll the monitoring sample account separately. Enroll its two nodes and grant its administrator role using the command above; sign in again and obtain office access before opening **Security monitoring**.
+5. Create and enroll the monitoring sample account separately. Enroll its two nodes and grant its administrator role using the command above; sign in again and obtain office access before opening **Security monitoring**.
 
 For the optional secured monitoring stack and phone-lab audit bridge, start Docker Desktop and run:
 
@@ -138,7 +143,7 @@ npm run build
 Pop-Location
 ```
 
-The backend suite checks authentication, session security, signed challenges, authorization, node revocation, and admin monitoring. The saved ZAP scans were passive and limited; they are not a penetration test or a certification. GitHub Actions runs the backend suite and frontend lint/build for pushes and pull requests.
+The backend suite checks authentication, session security, signed challenges, authorization, node revocation, and admin monitoring. The saved ZAP scans were passive and limited; they are not a penetration test or a certification. GitHub Actions runs the backend suite, frontend lint/build, and Android debug build/unit tests for pushes and pull requests.
 
 ## Limitations and next steps
 
@@ -158,9 +163,8 @@ examples/                Sample website integrations
 deploy/production/       Caddy, PostgreSQL, and secured monitoring configuration
 scripts/                 Local setup, phone testing, and security-check helpers
 docs/                    Kibana assets, security evidence, and historical notes
-output/                  Debug APKs and historical project artifacts
-archive/                 Earlier infrastructure configurations (not the active setup)
-mobile/                  Earlier Flutter client, retained as a reference
+output/                  Historical project artifacts
+archive/                 Earlier infrastructure and Flutter client (reference only)
 .github/workflows/       Automated backend and frontend checks
 ```
 

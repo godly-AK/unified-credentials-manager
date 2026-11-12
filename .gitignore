@@ -19,4 +19,8 @@ coverage/
 .taste-skill/
 backend/data/*.sqlite3
 /output/playwright/
+/output/*.apk
+/output/*.sha256.txt
 /frontend/public/downloads/*.apk
+# Local leftovers from the archived Flutter client
+/mobile/

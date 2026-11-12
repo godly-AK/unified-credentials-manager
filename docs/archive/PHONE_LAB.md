@@ -7,7 +7,7 @@ The temporary ngrok tunnel supplies one HTTPS address for the portal and API. UC
 ## Prepare
 
 1. Install ngrok using its [official Windows instructions](https://ngrok.com/download/windows) and add your account's authtoken. Choose the HTTPS dev domain assigned to your account. Keep that exact address for every enrollment and test.
-2. Install the backend and frontend dependencies from the [README](../../README.md), and install the current [Android debug APK](../../output/UCM-lab-debug-v0.5.0-android14-2026-11-03.apk) on all devices. Version 0.5.0 accepts eight-digit request codes, supports both Bluetooth write modes, and assigns trusted-node roles automatically. The debug build pre-fills the current lab URL and `progress_demo` username. **Update in place** to keep enrolled Keystore keys. This is a debug-signed lab APK, not a store or production release.
+2. Install the backend and frontend dependencies from the [README](../../README.md), and install the current [Android debug APK](https://github.com/godly-AK/unified-credentials-manager/releases/download/v0.5.0-preview/UCM-lab-debug-v0.5.0-android14-2026-11-03.apk) on all devices. Version 0.5.0 accepts eight-digit request codes, supports both Bluetooth write modes, and assigns trusted-node roles automatically. The debug build pre-fills the current lab URL and `progress_demo` username. **Update in place** to keep enrolled Keystore keys. This is a debug-signed lab APK, not a store or production release.
 3. Stop the normal SQLite demo with `scripts/Stop-Demo.ps1`. The phone lab uses ports 3000 and 8000 but a separate database and encryption key in ignored `.demo/phone-lab/`.
 4. From the repository root, replace the example URL below with your assigned HTTPS address:
 
